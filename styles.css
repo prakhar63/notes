@@ -127,9 +127,12 @@ button { cursor: pointer; }
   white-space: nowrap;
 }
 
+/* Pinned to the window itself: on some Android installs 100dvh also counts the strip
+   behind the navigation bar, which pushed the bottom of the list and the + off screen. */
 .app {
+  position: fixed;
+  inset: 0;
   display: flex;
-  height: 100dvh;
 }
 
 /* ---------- Sidebar ---------- */
@@ -1300,7 +1303,7 @@ kbd {
   .fab {
     position: absolute;
     right: 20px;
-    bottom: calc(28px + env(safe-area-inset-bottom));
+    bottom: max(28px, calc(16px + env(safe-area-inset-bottom)));
     z-index: 31; /* above the dimmed screen while the new-note menu is open */
     width: 60px;
     height: 60px;
