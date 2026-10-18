@@ -123,7 +123,7 @@ Only weights 400 and 600 are loaded; don't use others.
 
 **List tile** (`.note-item`): 14px radius, 12/14px padding, note-color tint, title (600) + one-line preview + short date. Hover: 1.5px `--accent` inset outline. Open: deep blue. Pinned tiles show a pin; swipe on phones (pin / Trash).
 
-**Search:** 44px, `--surface` with a `--line` border, 12px radius, search icon. Matches are highlighted with `--highlight`.
+**Search:** lives at the top of the ☰ menu. 44px (48px on phones), `--surface` with a `--line` border, 12px radius, search icon, a "Ctrl K" hint on desktop. Searches every note outside Trash; results replace the notebook tree while typing (title, notebook name, a snippet starting at a word near the first match), matches marked with `--highlight`. Enter opens the first result and scrolls to the match. Ctrl+K, the collapsed rail's search button and pulling the list down (phones) open the menu with search ready.
 
 **Header title:** the current view (All notes, a notebook, Trash) in Literata 22px (24px on phones). In a notebook or Trash, a ← (light-blue round button) goes back to All notes; in a notebook, ⋯ opens Rename / Delete.
 
@@ -190,7 +190,7 @@ All animation and transition is turned off under `prefers-reduced-motion: reduce
 - Real `<button>`, `<input>`, `<label>`; icon-only buttons have `aria-label`.
 - Visible focus: 2px `--accent` outline, 2px offset.
 - Live changes announced: toasts and statuses use `role="status"`.
-- Everything works by keyboard: `↑ ↓` in the list, `Ctrl+K` search, `Ctrl+Alt+N` new note, `Esc` closes, `?` shows shortcuts.
+- Everything works by keyboard: `↑ ↓` in the list and the menu, `Ctrl+K` search, `Ctrl+Alt+N` new note, `Ctrl+\` hide the list, `Esc` closes (pop-over → select mode → menu → tray), `?` shows shortcuts.
 - Check both themes and phone width before shipping a new screen.
 
 ---
