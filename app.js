@@ -301,6 +301,7 @@ function previewFor(note, words) {
 
 function renderList() {
   renderToday();
+  renderSelectChrome();
   renderNotebookButton();
   renderBackupNudge();
   renderTagFilter();
@@ -344,6 +345,12 @@ function renderList() {
     btn.dataset.color = note.color;
     btn.style.setProperty('--c', colorVar(note.color));
     if (note.id === activeId) btn.setAttribute('aria-current', 'true');
+    if (selected) {
+      btn.setAttribute('aria-pressed', String(selected.has(note.id)));
+      const box = el('span', 'select-box');
+      box.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
+      btn.append(box);
+    }
 
     // Pinned notes show a pin where the date would be. In "All notes", the notebook's name too.
     const end = el('span', 'note-end');
@@ -1374,6 +1381,7 @@ function renderNotebookButton() {
   $('#view-title').textContent = name;
   document.title = view === 'all' ? 'Notes' : `${name} · Notes`;
   nbBtn.hidden = view === 'all' || view === 'trash';
+  $('#view-back').hidden = view === 'all';
   if (!drawerEl.hidden) renderDrawer();
 }
 
@@ -1406,7 +1414,7 @@ function closeNotebookMenu() {
   nbBtn.setAttribute('aria-expanded', 'false');
 }
 
-async function createNotebook({ assign = null } = {}) {
+async function createNotebook({ assign = null, open = true } = {}) {
   const name = await ask({ title: 'New notebook', message: 'Group notes you want to keep together.', input: '', placeholder: 'Notebook name', okLabel: 'Create' });
   if (!name?.trim()) return null;
   const nb = { id: uid(), name: name.trim(), createdAt: Date.now() };
@@ -1418,7 +1426,7 @@ async function createNotebook({ assign = null } = {}) {
     renderNotebookSelect(assign);
     renderList();
     showToast(`Moved to ${nb.name}`, { ms: 2500 });
-  } else {
+  } else if (open) {
     setView(nb.id);
   }
   return nb;
@@ -1642,6 +1650,10 @@ function openFromDrawer(id, { book = null, jumpTo = null } = {}) {
 }
 
 menuBtn.addEventListener('click', () => openDrawer());
+$('#view-back').addEventListener('click', () => {
+  setView('all');
+  menuBtn.focus(); // the back arrow itself is gone now
+});
 $('#drawer-close').addEventListener('click', () => closeDrawer());
 drawerScrim.addEventListener('click', () => closeDrawer());
 drawerEl.addEventListener('click', (e) => {
@@ -2236,6 +2248,7 @@ listEl.addEventListener('click', (e) => {
   const item = e.target.closest('.note-item');
   if (!item) return;
   if (swallowClick) { swallowClick = false; return; }
+  if (selected) { toggleSelected(item.dataset.id, { range: e.shiftKey }); return; }
   openNote(item.dataset.id);
 });
 
@@ -2254,7 +2267,7 @@ listEl.addEventListener('keydown', (e) => {
 let swipe = null;
 listEl.addEventListener('pointerdown', (e) => {
   const tile = e.target.closest('.note-item');
-  if (!tile || !phoneLayout.matches || view === 'trash' || e.pointerType === 'mouse') return;
+  if (!tile || !phoneLayout.matches || view === 'trash' || selected || e.pointerType === 'mouse') return;
   swipe = { tile, li: tile.parentElement, x: e.clientX, y: e.clientY, dx: 0, active: false, id: e.pointerId };
 });
 listEl.addEventListener('pointermove', (e) => {
@@ -2309,6 +2322,292 @@ listEl.addEventListener('touchend', () => {
   pull = null;
 });
 
+// ---------- Select several notes: pin, move, color, delete together ----------
+
+let selected = null; // ids picked while selecting; null when not selecting
+let lastPicked = null; // for Shift-click ranges
+const selectBar = $('#select-bar');
+const selectPop = $('#select-pop');
+let selectPopFor = null; // the bar button whose pop-over is open
+
+function startSelect(firstId = null) {
+  if (selected) return;
+  closeNotebookMenu();
+  selected = new Set(firstId ? [firstId] : []);
+  lastPicked = firstId;
+  document.body.dataset.select = 'on';
+  // Phones: the back gesture stops selecting.
+  if (phoneLayout.matches) history.pushState({ ...history.state, select: true }, '');
+  renderList();
+  $('#select-cancel').focus();
+}
+
+function endSelect({ fromHistory = false } = {}) {
+  if (!selected) return;
+  selected = null;
+  lastPicked = null;
+  delete document.body.dataset.select;
+  closeSelectPop();
+  renderList();
+  if (!fromHistory && history.state?.select) history.back(); // drop our history entry
+}
+
+function toggleSelected(id, { range = false } = {}) {
+  if (range && lastPicked && lastPicked !== id) {
+    const ids = [...listEl.querySelectorAll('.note-item')].map((b) => b.dataset.id);
+    const [a, b] = [ids.indexOf(lastPicked), ids.indexOf(id)].sort((x, y) => x - y);
+    if (a !== -1) ids.slice(a, b + 1).forEach((x) => selected.add(x));
+  } else if (selected.has(id)) {
+    selected.delete(id);
+  } else {
+    selected.add(id);
+  }
+  lastPicked = id;
+  renderList();
+  listEl.querySelector(`.note-item[data-id="${CSS.escape(id)}"]`)?.focus();
+}
+
+const pickedNotes = () => notes.filter((n) => selected?.has(n.id));
+
+// The header, hint and action bar while selecting (called from renderList).
+function renderSelectChrome() {
+  const on = !!selected;
+  $('.sidebar-head').hidden = on;
+  $('#select-head').hidden = !on;
+  $('#select-hint').hidden = !on;
+  $('#select-start').hidden = on;
+  selectBar.hidden = !on;
+  if (!on) return;
+  const shownIds = new Set(visibleNotes().map((n) => n.id));
+  for (const id of selected) if (!shownIds.has(id)) selected.delete(id); // filtered away meanwhile
+  const count = selected.size;
+  $('#select-count').textContent = `${count} selected`;
+  $('#select-all').textContent = count && count === shownIds.size ? 'Select none' : 'Select all';
+  $('#select-hint').textContent = phoneLayout.matches
+    ? 'Tap notes to add or remove them.'
+    : 'Click notes to add or remove them. Shift-click selects a range.';
+  const trash = view === 'trash';
+  const picked = pickedNotes();
+  for (const b of selectBar.querySelectorAll('.select-act')) {
+    const act = b.dataset.act;
+    b.hidden = trash ? !['restore', 'delete'].includes(act) : act === 'restore';
+    b.disabled = !count;
+  }
+  const allPinned = count && picked.every(isPinned);
+  selectBar.querySelector('[data-act="pin"] .select-act-label').textContent = allPinned ? 'Unpin' : 'Pin';
+  selectBar.querySelector('[data-act="delete"] .select-act-label').textContent = trash ? 'Delete forever' : 'Delete';
+}
+
+const plural = (n, word = 'note') => `${n} ${word}${n === 1 ? '' : 's'}`;
+const setOrDelete = (note, key, value) => { if (value === undefined) delete note[key]; else note[key] = value; };
+
+// Applies a change to the picked notes, with Undo that puts every field back.
+function changePicked(change, message) {
+  const list = pickedNotes();
+  const before = list.map((n) => ({ n, color: n.color, notebookId: n.notebookId, pinnedAt: n.pinnedAt, deletedAt: n.deletedAt }));
+  list.forEach(change);
+  const afterChange = () => {
+    flushSave();
+    if (activeNote() && !inView(activeNote())) {
+      activeId = phoneLayout.matches ? null : visibleNotes()[0]?.id ?? null;
+    }
+    renderList();
+    renderEditor();
+  };
+  endSelect();
+  afterChange();
+  showToast(message, {
+    onUndo: () => {
+      for (const b of before) {
+        b.n.color = b.color;
+        setOrDelete(b.n, 'notebookId', b.notebookId);
+        setOrDelete(b.n, 'pinnedAt', b.pinnedAt);
+        setOrDelete(b.n, 'deletedAt', b.deletedAt);
+      }
+      afterChange();
+    },
+  });
+}
+
+function pinPicked() {
+  const list = pickedNotes();
+  if (list.every(isPinned)) {
+    changePicked((n) => { delete n.pinnedAt; }, `Unpinned ${plural(list.length)}`);
+    return;
+  }
+  const unpinned = list.filter((n) => !isPinned(n));
+  const room = Math.max(0, MAX_PINS - notes.filter(isPinned).length);
+  if (!room) { showToast(`You can pin up to ${MAX_PINS} notes. Unpin one first.`); return; }
+  const toPin = new Set(unpinned.slice(0, room).map((n) => n.id));
+  const now = Date.now();
+  let i = 0;
+  const message = toPin.size < unpinned.length
+    ? `Pinned ${plural(toPin.size)}: you can pin up to ${MAX_PINS}`
+    : `Pinned ${plural(toPin.size)}`;
+  changePicked((n) => { if (toPin.has(n.id)) { n.pinnedAt = now + i; i += 1; } }, message);
+}
+
+function deletePicked() {
+  const count = selected.size;
+  changePicked((n) => { n.deletedAt = Date.now(); }, `${plural(count)} moved to Trash`);
+}
+
+function restorePicked() {
+  const count = selected.size;
+  let pinned = notes.filter(isPinned).length;
+  changePicked((n) => {
+    delete n.deletedAt;
+    // As when restoring one note: no notebook that's gone, no pin past the limit.
+    if (n.notebookId && !notebookName(n.notebookId)) delete n.notebookId;
+    if (Number.isFinite(n.pinnedAt)) { if (pinned >= MAX_PINS) delete n.pinnedAt; else pinned += 1; }
+  }, `Restored ${plural(count)}`);
+}
+
+async function deletePickedForever() {
+  const list = pickedNotes();
+  const ok = await ask({ title: `Delete ${plural(list.length)} forever?`, message: 'They will be gone for good.', okLabel: 'Delete forever', danger: true });
+  if (!ok) return;
+  const ids = new Set(list.map((n) => n.id));
+  for (let i = notes.length - 1; i >= 0; i--) if (ids.has(notes[i].id)) notes.splice(i, 1);
+  endSelect();
+  flushSave();
+  if (!activeNote()) { activeId = null; renderEditor(); }
+  renderList();
+  showToast(`Deleted ${plural(list.length)} forever`, { ms: 2500 });
+}
+
+// Move and Color open a small pop-over above their button.
+function openSelectPop(btn) {
+  const act = btn.dataset.act;
+  closeSelectPop();
+  const count = selected.size;
+  const parts = [el('p', 'select-pop-title', act === 'move' ? `Move ${plural(count)} to` : `Color for ${plural(count)}`)];
+  if (act === 'move') {
+    const option = (label, id, kind = '') => {
+      const b = el('button', `nb-item ${kind}`);
+      b.type = 'button';
+      b.setAttribute('role', 'menuitem');
+      b.dataset.move = id;
+      b.append(el('span', 'nb-item-name', label));
+      return b;
+    };
+    parts.push(option('No notebook', ''));
+    for (const nb of [...notebooks].sort((a, b) => a.name.localeCompare(b.name))) parts.push(option(nb.name, nb.id));
+    parts.push(option('New notebook…', 'new', 'nb-action'));
+  } else {
+    const swatches = el('div', 'select-swatches');
+    for (const c of PALETTE) {
+      const b = el('button', 'swatch');
+      b.type = 'button';
+      b.setAttribute('role', 'menuitem');
+      b.setAttribute('aria-label', c.name);
+      b.title = c.name;
+      b.dataset.color = c.id;
+      b.style.setProperty('--c', colorVar(c.id));
+      swatches.append(b);
+    }
+    parts.push(swatches);
+  }
+  selectPop.replaceChildren(...parts);
+  selectPop.setAttribute('aria-label', act === 'move' ? 'Move to notebook' : 'Color');
+  selectPop.hidden = false;
+  selectPopFor = btn;
+  btn.setAttribute('aria-expanded', 'true');
+  const r = btn.getBoundingClientRect();
+  const width = Math.min(260, innerWidth - 16);
+  selectPop.style.width = `${width}px`;
+  selectPop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - width - 8))}px`;
+  selectPop.style.bottom = `${innerHeight - r.top + 8}px`;
+  selectPop.querySelector('button')?.focus();
+}
+
+function closeSelectPop() {
+  if (selectPop.hidden) return;
+  selectPop.hidden = true;
+  selectPopFor?.setAttribute('aria-expanded', 'false');
+  selectPopFor = null;
+}
+
+async function moveSelectedTo(target) {
+  closeSelectPop();
+  let id = target;
+  if (target === 'new') {
+    const nb = await createNotebook({ open: false });
+    if (!nb || !selected) return;
+    id = nb.id;
+  }
+  const count = selected.size;
+  const message = id ? `Moved ${plural(count)} to ${notebookName(id)}` : `Took ${plural(count)} out of their notebooks`;
+  changePicked((n) => { if (id) n.notebookId = id; else delete n.notebookId; }, message);
+}
+
+$('#select-start').addEventListener('click', () => startSelect());
+$('#select-cancel').addEventListener('click', () => endSelect());
+$('#select-all').addEventListener('click', () => {
+  const ids = visibleNotes().map((n) => n.id);
+  if (selected.size === ids.length) selected.clear(); else ids.forEach((id) => selected.add(id));
+  renderList();
+});
+selectBar.addEventListener('click', (e) => {
+  const btn = e.target.closest('.select-act');
+  if (!btn || btn.disabled || !selected?.size) return;
+  const act = btn.dataset.act;
+  if (act === 'move' || act === 'color') {
+    if (selectPopFor === btn) closeSelectPop(); else openSelectPop(btn);
+  } else if (act === 'pin') pinPicked();
+  else if (act === 'restore') restorePicked();
+  else if (act === 'delete') (view === 'trash' ? deletePickedForever() : deletePicked());
+});
+selectPop.addEventListener('click', (e) => {
+  const move = e.target.closest('[data-move]');
+  const color = e.target.closest('[data-color]');
+  if (move) moveSelectedTo(move.dataset.move);
+  else if (color) {
+    closeSelectPop();
+    const name = PALETTE.find((c) => c.id === color.dataset.color)?.name ?? '';
+    changePicked((n) => { n.color = color.dataset.color; }, `${plural(selected.size)} now ${name}`);
+  }
+});
+selectPop.addEventListener('keydown', (e) => {
+  if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  e.preventDefault();
+  const items = [...selectPop.querySelectorAll('button')];
+  const i = items.indexOf(document.activeElement);
+  const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : items.length - 1;
+  items[(i + step) % items.length].focus();
+});
+document.addEventListener('pointerdown', (e) => {
+  if (selectPop.hidden || selectPop.contains(e.target) || selectPopFor?.contains(e.target)) return;
+  closeSelectPop();
+});
+
+// Phones: press and hold a note to start selecting with it.
+let holdTimer = null;
+listEl.addEventListener('pointerdown', (e) => {
+  const tile = e.target.closest('.note-item');
+  if (!tile || selected || e.pointerType === 'mouse') return;
+  const start = { x: e.clientX, y: e.clientY };
+  clearTimeout(holdTimer);
+  holdTimer = setTimeout(() => {
+    holdTimer = null;
+    swipe = null; // a hold isn't a swipe
+    swallowClick = true; // the finger lifting shouldn't toggle it straight back
+    setTimeout(() => { swallowClick = false; }, 600);
+    navigator.vibrate?.(15);
+    startSelect(tile.dataset.id);
+  }, 500);
+  const cancel = (ev) => {
+    if (ev.type === 'pointermove' && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 10) return;
+    clearTimeout(holdTimer);
+    holdTimer = null;
+    listEl.removeEventListener('pointermove', cancel);
+  };
+  listEl.addEventListener('pointermove', cancel);
+  listEl.addEventListener('pointerup', cancel, { once: true });
+  listEl.addEventListener('pointercancel', cancel, { once: true });
+});
+listEl.addEventListener('contextmenu', (e) => { if (e.target.closest('.note-item') && phoneLayout.matches) e.preventDefault(); });
+
 // ---------- Collapsible list (desktop) ----------
 
 const LIST_KEY = 'notes.listCollapsed';
@@ -2332,6 +2631,7 @@ for (const id of ['#new-note', '#new-note-fab', '#rail-new']) $(id).addEventList
 $('#back').addEventListener('click', leaveEditorView);
 window.addEventListener('popstate', () => {
   if (!drawerEl.hidden) closeDrawer({ fromHistory: true });
+  else if (selected && !history.state?.select) endSelect({ fromHistory: true });
   else if (!viewerEl.hidden) closeViewer({ fromHistory: true });
   else if (document.body.dataset.view === 'editor') showList();
 });
@@ -2616,6 +2916,17 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !trayEl.hidden) {
     closeTray();
     fmtToggleEl.focus();
+    return;
+  }
+  if (e.key === 'Escape' && !selectPop.hidden) {
+    const from = selectPopFor;
+    closeSelectPop();
+    from?.focus();
+    return;
+  }
+  if (e.key === 'Escape' && selected) {
+    endSelect();
+    $('#select-start').focus();
     return;
   }
   if (e.key === 'Escape' && !drawerEl.hidden) {

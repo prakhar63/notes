@@ -106,7 +106,7 @@ Only weights 400 and 600 are loaded; don't use others.
 
 - **Desktop (≥ 720px):** list (320px) beside the page. The list can collapse to a rail (`Ctrl+\`).
 - **Phone (< 720px):** one screen at a time, switched by `body[data-view]` (`list` / `editor`), with the back gesture working through history. The app is pinned to the window (`position: fixed; inset: 0`) so nothing hides behind Android's navigation bar.
-- **Sidebar order:** header (☰, view title, ⋯ in a notebook, collapse, +) → date line (`**Sunday**, 18 October · 2 notes today`) → tag chips → backup nudge → count + sort → list. Search, notebooks, Trash, the theme toggle and More live in the ☰ menu.
+- **Sidebar order:** header (☰, ← outside All notes, view title, ⋯ in a notebook, collapse, +) → date line (`**Sunday**, 18 October · 2 notes today`) → tag chips → backup nudge → count + sort → list. Search, notebooks, Trash, the theme toggle and More live in the ☰ menu.
 - Safe areas: use `env(safe-area-inset-*)` for anything at the screen edge (`viewport-fit=cover`).
 
 ---
@@ -125,9 +125,11 @@ Only weights 400 and 600 are loaded; don't use others.
 
 **Search:** 44px, `--surface` with a `--line` border, 12px radius, search icon. Matches are highlighted with `--highlight`.
 
-**Header title:** the current view (All notes, a notebook, Trash) in Literata 22px (24px on phones). In a notebook, ⋯ beside it opens Rename / Delete.
+**Header title:** the current view (All notes, a notebook, Trash) in Literata 22px (24px on phones). In a notebook or Trash, a ← (light-blue round button) goes back to All notes; in a notebook, ⋯ opens Rename / Delete.
 
 **☰ menu (drawer):** slides in from the left over a dimmed app (340px, max 88% of the screen), the app behind is inert. Top: close, wordmark, theme toggle. Then search (results replace the tree while typing: title + snippet with matches marked, notebook name), All notes, Notebooks (each with a ▸ to show its notes, + New), Trash, and More at the bottom (sync, back up, restore, shortcuts, version). Rows are 40px (44px on phones); the current view is filled `--highlight`. Esc or the phone back gesture closes it.
+
+**Select mode:** "Select" beside the sort, or press and hold a note on a phone. The header becomes ✕ · "N selected" · Select all/none, with a hint line below. Tiles get a round check on the left; a picked tile has a 2px `--brand-text` ring and the open note loses its deep-blue fill. Actions sit in a bar (floating card under the list on desktop, a full-width bottom bar on phones that replaces the +): Pin/Unpin, Move (pop-over of notebooks + New notebook…), Color (pop-over of swatches), Delete (red). In Trash: Restore and Delete forever (asks first). Every action ends select mode and shows a toast with Undo. Shift-click picks a range; Esc or the phone back gesture stops selecting.
 
 **Chips** (tags): pill, `--surface` with a `--line` border, 13px, 600; hover outlines `--accent`; the active chip is filled `--highlight`.
 
