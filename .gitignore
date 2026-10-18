@@ -1,0 +1,7 @@
+# Word lock files
+~$*
+
+# OS clutter
+Thumbs.db
+desktop.ini
+.DS_Store

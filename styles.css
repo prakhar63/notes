@@ -1,0 +1,1521 @@
+/* Visual reference: Claude Design canvas "Notes App Layouts", page "UI ideas".
+   Palette: Charcoal #1E2A31, Deep blue #0E4A72, Mid blue #3482BC, Light blue #BDE0F8. */
+
+:root {
+  color-scheme: light;
+  --bg: #eef5fb;            /* Mist: page ground */
+  --surface: #ffffff;       /* the note page: one consistent color */
+  --surface-2: #f4f9fd;
+  --ink: #1e2a31;           /* Charcoal */
+  --muted: #51626c;
+  --line: #cfe2f0;
+  --rule: #d6e7f4;          /* paper lines */
+  --rule-strong: #8fb8d8;   /* paper dots */
+  --brand: #0e4a72;         /* Deep blue: buttons, open note */
+  --brand-ink: #ffffff;
+  --brand-text: #0e4a72;
+  --accent: #3482bc;        /* Mid blue: focus, selection, icons (not small text) */
+  --highlight: #bde0f8;     /* Light blue */
+  --highlight-ink: #1e2a31;
+  --done-ink: #7a8a94;
+
+  /* List tiles wear their note's color, lightly mixed into the surface. */
+  --tile-mix: 42%;
+  --tile-ink: #1e2a31;
+  --tile-muted: #3d4a52;
+  --tile-edge: rgb(30 42 49 / 0.08);
+  --tile-active: #0e4a72;
+  --tile-active-ink: #ffffff;
+  --tile-active-muted: #bde0f8;
+
+  --toast-bg: #1e2a31;
+  --toast-ink: #ffffff;
+
+  /* Note colors */
+  --c-paper: #ffffff;
+  --c-cornflower: #94b6ef;
+  --c-chartreuse: #e6e279;
+  --c-peach: #f6b48f;
+  --c-mint: #9fdcc0;
+  --c-pink: #f3a6c4;
+
+  --font-ui: "DM Sans", system-ui, sans-serif;
+  --font-write: "Literata", Georgia, serif;
+  --shadow-card: 0 1px 2px rgb(30 42 49 / 0.06), 0 8px 24px rgb(30 42 49 / 0.08);
+  --shadow-pop: 0 2px 6px rgb(30 42 49 / 0.1), 0 16px 36px rgb(30 42 49 / 0.16);
+  --lh: 32px;               /* writing line height; paper lines follow it */
+}
+
+/* Dark: follows the system unless you picked light or dark with the toggle. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #141d22;
+    --surface: #1e2a31;
+    --surface-2: #26343c;
+    --ink: #e6f1f9;
+    --muted: #9db2c0;
+    --line: #2e3e47;
+    --rule: #2b3a43;
+    --rule-strong: #4f6878;
+    --brand: #bde0f8;
+    --brand-ink: #1e2a31;
+    --brand-text: #bde0f8;
+    --accent: #6fb0e0;
+    --highlight: #0e4a72;
+    --highlight-ink: #e6f1f9;
+    --done-ink: #7f93a0;
+    --tile-mix: 22%;
+    --tile-ink: #e6f1f9;
+    --tile-muted: #b5c7d3;
+    --tile-edge: rgb(255 255 255 / 0.06);
+    --toast-bg: #e6f1f9;
+    --toast-ink: #1e2a31;
+    --shadow-card: 0 0 0 1px #2e3e47;
+    --shadow-pop: 0 0 0 1px #2e3e47, 0 16px 36px rgb(0 0 0 / 0.4);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #141d22;
+  --surface: #1e2a31;
+  --surface-2: #26343c;
+  --ink: #e6f1f9;
+  --muted: #9db2c0;
+  --line: #2e3e47;
+  --rule: #2b3a43;
+  --rule-strong: #4f6878;
+  --brand: #bde0f8;
+  --brand-ink: #1e2a31;
+  --brand-text: #bde0f8;
+  --accent: #6fb0e0;
+  --highlight: #0e4a72;
+  --highlight-ink: #e6f1f9;
+  --done-ink: #7f93a0;
+  --tile-mix: 22%;
+  --tile-ink: #e6f1f9;
+  --tile-muted: #b5c7d3;
+  --tile-edge: rgb(255 255 255 / 0.06);
+  --toast-bg: #e6f1f9;
+  --toast-ink: #1e2a31;
+  --shadow-card: 0 0 0 1px #2e3e47;
+  --shadow-pop: 0 0 0 1px #2e3e47, 0 16px 36px rgb(0 0 0 / 0.4);
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Pinned to the window itself: on some Android installs 100dvh also counts the strip
+   behind the navigation bar, which pushed the bottom of the list and the + off screen. */
+.app {
+  position: fixed;
+  inset: 0;
+  display: flex;
+}
+
+/* ---------- Sidebar ---------- */
+
+.sidebar {
+  position: relative;
+  flex: 0 0 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  padding: 22px 16px 0 24px;
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The notebook picker is the header title: "All notes", or the notebook you are in. */
+.sidebar-head .notebook-btn {
+  flex: 1;
+  min-width: 0;
+  margin-right: 4px;
+  font: 600 17px/1.2 var(--font-write);
+}
+
+.head-btn {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+.head-btn:hover { background: var(--surface-2); color: var(--ink); }
+
+/* Light/dark toggle shows what you'd switch to. */
+.icon-sun { display: none; }
+:root[data-effective="dark"] .icon-sun { display: block; }
+:root[data-effective="dark"] .icon-moon { display: none; }
+
+.new-btn {
+  width: 40px;
+  height: 40px;
+  margin-left: 4px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+.new-btn:hover, .fab:hover, .rail-new:hover { filter: brightness(1.12); }
+
+/* Today's date on one line: "Sunday, 18 October · 2 notes today" */
+.today { margin: 0; padding: 0 2px; font-size: 14px; color: var(--muted); }
+.today-day { color: var(--ink); font-weight: 600; }
+
+/* ---------- Collapsible list (desktop) ---------- */
+
+.rail {
+  display: none;
+  flex: 0 0 72px;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 0;
+}
+.rail-btn {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+}
+.rail-btn:hover { background: var(--surface-2); color: var(--ink); }
+.rail-expand { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-card); }
+.rail-new { border-radius: 50%; background: var(--brand); color: var(--brand-ink); }
+
+body[data-list="collapsed"] .sidebar { display: none; }
+body[data-list="collapsed"] .rail { display: flex; }
+body[data-list="collapsed"] .editor-wrap { padding-left: 0; }
+body[data-list="collapsed"] .page { max-width: 760px; }
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+}
+.search:focus-within { border-color: var(--accent); }
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+}
+.search input::placeholder { color: var(--muted); }
+
+.list-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.sort { display: flex; align-items: center; gap: 4px; }
+.sort select {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.note-list {
+  list-style: none;
+  margin: 0 -8px 0 0;
+  padding: 0 8px 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* A tile wears its note's color; the open note is deep blue. */
+.note-item {
+  --c: var(--c-paper);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--c) var(--tile-mix), var(--surface));
+  color: var(--tile-ink);
+  text-align: left;
+  box-shadow: inset 0 0 0 1px var(--tile-edge);
+  transition: background-color 0.15s, box-shadow 0.15s;
+}
+.note-item[data-color="paper"] { background: var(--surface); }
+.note-item:hover { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.note-item[aria-current="true"] {
+  background: var(--tile-active);
+  color: var(--tile-active-ink);
+  box-shadow: 0 6px 16px rgb(14 74 114 / 0.25);
+}
+
+.note-main { flex: 1; min-width: 0; }
+
+.note-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The color dot only shows on the open (blue) tile, where the tint can't. */
+.dot {
+  display: none;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c);
+}
+.note-item[aria-current="true"] .dot { display: block; }
+
+.note-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-date { font-size: 12px; color: var(--tile-muted); }
+.note-pin { display: grid; fill: var(--accent); }
+.note-item[aria-current="true"] .note-date { color: var(--tile-active-muted); }
+.note-item[aria-current="true"] .note-pin { fill: var(--tile-active-muted); }
+
+.note-preview {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--tile-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.note-item[aria-current="true"] .note-preview { color: var(--tile-active-muted); }
+
+/* Richer tiles: first picture, checklist progress */
+.note-thumb {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+.note-progress { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.note-progress-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgb(30 42 49 / 0.12);
+}
+:root[data-effective="dark"] .note-progress-bar { background: rgb(255 255 255 / 0.12); }
+.note-progress-fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.note-progress-text { font-size: 12px; color: var(--tile-muted); }
+.note-item[aria-current="true"] .note-progress-bar { background: rgb(255 255 255 / 0.25); }
+.note-item[aria-current="true"] .note-progress-fill { background: var(--tile-active-muted); }
+.note-item[aria-current="true"] .note-progress-text { color: var(--tile-active-muted); }
+
+/* Section labels: "Pinned · 2 of 5", "Today", "Yesterday"… */
+.list-section {
+  display: flex;
+  gap: 4px;
+  padding: 8px 4px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.list-section-count { font-weight: 400; }
+
+.list-empty {
+  padding: 24px 14px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* ---------- #hashtags ---------- */
+
+/* Chip row above the list: one scrolling line, so many tags never push the list down. */
+.tag-filter {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -4px;
+  padding: 2px 4px;
+}
+.tag-filter::-webkit-scrollbar { display: none; }
+.tag-chip {
+  flex: none;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tag-chip:hover { border-color: var(--accent); }
+.tag-chip[aria-pressed="true"] { border-color: var(--highlight); background: var(--highlight); color: var(--highlight-ink); }
+.tag-count { font-weight: 400; opacity: 0.75; }
+
+/* "Tags in this note:" under the text */
+.note-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-ui);
+}
+.note-tags-label { font-size: 13px; color: var(--muted); }
+.note-tag {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--highlight);
+  color: var(--highlight-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.note-tag:hover { box-shadow: inset 0 0 0 1.5px var(--accent); }
+
+/* "Show #tag notes" in the editor bar, after tapping a #tag in the text; it stands in for the status text */
+.tag-hint {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: max-content;
+  margin-left: auto;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.tag-hint svg { flex: none; }
+.tag-hint-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor[data-tag-hint] .meta { display: none; }
+
+.tag-filter[hidden], .note-tags[hidden], .tag-hint[hidden] { display: none; }
+
+
+/* ---------- Editor ---------- */
+
+.editor-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  padding: 20px 20px 20px 4px;
+}
+
+/* The page is one consistent color; a note's color shows on its list tile. */
+.editor {
+  --c: var(--c-paper);
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 20px 28px;
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.back {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--brand-text);
+  font-weight: 600;
+}
+
+/* Aa: opens the tray with color, page style and insert */
+.fmt-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: 600;
+}
+.fmt-toggle:hover { box-shadow: inset 0 0 0 1px var(--line); }
+.fmt-toggle[aria-expanded="true"] { background: var(--highlight); color: var(--highlight-ink); }
+.fmt-toggle svg { transition: transform 0.15s; }
+.fmt-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.fmt-aa { font: 600 17px/1 var(--font-write); }
+
+/* Status text: quiet, only says something while saving, on errors, or a checklist's progress */
+.meta {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-btn {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+.icon-btn:hover { background: var(--surface-2); color: var(--ink); }
+
+.pin-btn svg { fill: none; stroke: currentColor; }
+.pin-btn[aria-pressed="true"] { color: var(--accent); }
+.pin-btn[aria-pressed="true"] svg { fill: currentColor; }
+
+/* The page scrolls; text boxes inside it grow with their text. */
+.page {
+  flex: 1;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  padding-top: 36px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+/* A note is a column of blocks: text and checklists, in any order. */
+.blocks {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
+}
+
+.note-date-line {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.title, .body {
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--font-write);
+}
+
+.title {
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.body {
+  display: block;
+  width: 100%;
+  flex: none;
+  min-height: var(--lh);
+  margin: 0;
+  overflow: hidden;
+  resize: none;
+  font-size: 19px;
+  line-height: var(--lh);
+}
+.body.grow { flex: 1 0 auto; min-height: calc(var(--lh) * 4); } /* the last text block fills the rest of the page */
+
+.title::placeholder, .body::placeholder { color: var(--muted); opacity: 0.6; }
+
+/* ---------- Paper styles (per note) ---------- */
+/* The pattern scrolls with the text (background-attachment: local) and lines up with --lh. */
+
+.page[data-paper="ruled"] .body,
+.page[data-paper="ruled"] .checklist {
+  background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--lh) - 1px), var(--rule) calc(var(--lh) - 1px) var(--lh));
+  background-attachment: local;
+}
+.page[data-paper="dotted"] .body,
+.page[data-paper="dotted"] .checklist {
+  background-image: radial-gradient(circle, var(--rule-strong) 1.2px, transparent 1.7px);
+  background-size: 24px var(--lh);
+  background-position: 0 calc(var(--lh) / 2);
+  background-attachment: local;
+}
+.page[data-paper="grid"] .body,
+.page[data-paper="grid"] .checklist {
+  background-image:
+    linear-gradient(to bottom, transparent calc(var(--lh) - 1px), var(--rule) 0),
+    linear-gradient(to right, transparent calc(var(--lh) - 1px), var(--rule) 0);
+  background-size: var(--lh) var(--lh);
+  background-attachment: local;
+}
+.checklist { --lh: 48px; }
+
+.empty { display: none; }
+.editor[data-empty] .editor-bar,
+.editor[data-empty] .page { display: none; }
+.editor[data-empty] .empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--muted);
+}
+.empty-title { margin: 0; font: 600 22px/1.3 var(--font-write); color: var(--ink); }
+.empty-hint { margin: 6px 0 0; }
+
+/* ---------- Aa tray ---------- */
+
+.tray {
+  position: fixed;
+  z-index: 30;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop);
+  animation: pop-in 0.16s ease-out;
+}
+.tray[hidden] { display: none; }
+.tray-section { display: flex; flex-direction: column; gap: 8px; }
+.tray-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+
+.swatches { display: flex; gap: 8px; }
+.swatch {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: inset 0 0 0 1px rgb(30 42 49 / 0.18);
+}
+.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+
+.paper-styles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.paper-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 2px 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.paper-opt:hover { background: var(--surface-2); }
+.paper-opt[aria-checked="true"] { background: var(--highlight); color: var(--highlight-ink); }
+.paper-swatch {
+  --lh: 6px;
+  width: 40px;
+  height: 30px;
+  border-radius: 5px;
+  background-color: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.paper-swatch[data-paper="ruled"] { background-image: repeating-linear-gradient(to bottom, transparent 0 5px, var(--rule-strong) 5px 6px); }
+.paper-swatch[data-paper="dotted"] { background-image: radial-gradient(circle, var(--rule-strong) 0.9px, transparent 1.3px); background-size: 6px 6px; }
+.paper-swatch[data-paper="grid"] {
+  background-image: linear-gradient(to bottom, transparent 5px, var(--rule-strong) 0), linear-gradient(to right, transparent 5px, var(--rule-strong) 0);
+  background-size: 6px 6px;
+}
+
+.tray-insert { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.tray-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.tray-btn:hover { box-shadow: inset 0 0 0 1px var(--accent); }
+.tray-insert { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tray-select {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* Phones: tools above the keyboard while typing */
+.kb-tools { display: none; }
+
+/* ---------- Images under the text ---------- */
+
+.note-images {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 0 8px;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-ui);
+}
+.note-images[hidden] { display: none; }
+.note-images-count { font-size: 13px; color: var(--muted); }
+.note-images-row { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+.image-tile { position: relative; flex: none; }
+.image-open {
+  display: grid;
+  place-items: center;
+  width: 160px;
+  height: 120px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: zoom-in;
+}
+.image-open img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.image-tile.missing .image-open { cursor: default; }
+.image-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(30 42 49 / 0.72);
+  color: #ffffff;
+}
+.image-add {
+  flex: none;
+  width: 120px;
+  height: 120px;
+  display: grid;
+  place-items: center;
+  border: 1.5px dashed var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+}
+.image-add:hover { border-color: var(--accent); color: var(--ink); }
+
+/* Full-size viewer (always dark) */
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: #141d22;
+  color: #ffffff;
+}
+.viewer[hidden] { display: none; }
+.viewer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(16px + env(safe-area-inset-top)) 16px 8px;
+}
+.viewer-count { font-size: 13px; opacity: 0.8; }
+.viewer-btn {
+  min-width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.12);
+  color: #ffffff;
+}
+.viewer-btn:hover { background: rgb(255 255 255 / 0.22); }
+.viewer-remove { display: flex; gap: 6px; padding: 0 14px; font-weight: 600; }
+.viewer-img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  padding: 8px 16px calc(24px + env(safe-area-inset-bottom));
+  touch-action: pan-y;
+  user-select: none;
+}
+.viewer-step { position: absolute; top: 50%; transform: translateY(-50%); }
+.viewer-step[hidden] { display: none; }
+.viewer-prev { left: 16px; }
+.viewer-next { right: 16px; }
+
+/* ---------- Checklist notes ---------- */
+
+.checklist {
+  flex: none;
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 8px 0 0;
+  border-radius: 10px;
+}
+/* Drag grip: shows on hover / the row you're on; always there on touch screens */
+.check-drag {
+  flex: none;
+  width: 24px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  opacity: 0;
+}
+.check-item:hover .check-drag, .check-item:focus-within .check-drag { opacity: 0.7; }
+@media (pointer: coarse) { .check-drag { opacity: 0.5; } }
+.check-item.dragging { background: var(--surface); box-shadow: var(--shadow-pop); position: relative; z-index: 2; }
+.check-item.dragging .check-drag { cursor: grabbing; opacity: 1; }
+.check-add { padding-left: 1px; }
+.check-item:focus-within { background: color-mix(in srgb, var(--surface-2) 80%, transparent); }
+.check-box {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+.check-text {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 8px 0;
+  font-family: var(--font-write);
+  font-size: 19px;
+  color: var(--ink);
+  /* the strike-through fades in rather than snapping on */
+  text-decoration: line-through;
+  text-decoration-color: transparent;
+  transition: color 0.2s, text-decoration-color 0.25s;
+}
+.check-text::placeholder { color: var(--muted); opacity: 0.6; }
+.check-item.done .check-text { color: var(--done-ink); text-decoration-color: currentColor; }
+.check-new { text-decoration: none; }
+.check-remove {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  visibility: hidden; /* shown for the row you're on, or under the mouse */
+}
+.check-item:hover .check-remove, .check-item:focus-within .check-remove { visibility: visible; }
+.check-remove:hover { background: var(--surface-2); color: var(--ink); }
+.check-add { color: var(--muted); }
+.check-add svg { flex: none; width: 22px; margin-left: 24px; }
+
+/* ---------- Backup ---------- */
+
+.fab { display: none; }
+
+/* Backup: a quiet link under the list that opens a small menu upward. */
+.backup {
+  position: relative;
+  align-self: flex-start;
+  margin: -8px 0 12px;
+  font-size: 13px;
+}
+.backup summary {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 4px;
+  list-style: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.backup summary::-webkit-details-marker { display: none; }
+.backup summary:hover, .backup[open] summary { color: var(--ink); }
+.backup-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  z-index: 5;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+.backup-menu button {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+.backup-menu button:hover { background: var(--surface-2); }
+.app-version {
+  margin: 4px 12px 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ---------- Toast ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 6px 6px 18px;
+  border-radius: 999px;
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgb(30 42 49 / 0.25);
+  animation: toast-in 0.2s ease-out;
+}
+.toast:has(.toast-action[hidden]) {
+  padding: 12px 20px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  white-space: normal;
+}
+.toast[hidden], .toast-action[hidden] { display: none; }
+.toast-action {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--toast-ink) 14%, transparent);
+  color: var(--toast-ink);
+  font-weight: 600;
+}
+.toast-action:hover { background: color-mix(in srgb, var(--toast-ink) 24%, transparent); }
+
+/* ---------- Notebooks ---------- */
+
+.notebook-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: 600;
+  text-align: left;
+}
+.notebook-btn:hover { border-color: var(--accent); }
+.notebook-btn .nb-icon { color: var(--brand-text); flex: none; }
+.notebook-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notebook-btn[data-view="trash"] .nb-icon { color: var(--muted); }
+
+.nb-menu {
+  position: fixed;
+  z-index: 30;
+  max-height: min(70vh, 480px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  animation: pop-in 0.16s ease-out;
+}
+.nb-menu[hidden] { display: none; }
+.nb-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+}
+.nb-item:hover, .nb-item:focus-visible { background: var(--surface-2); }
+.nb-item[aria-checked="true"] { background: var(--highlight); color: var(--highlight-ink); font-weight: 600; }
+.nb-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-item-count { font-size: 13px; color: var(--muted); }
+.nb-item[aria-checked="true"] .nb-item-count { color: inherit; }
+.nb-action { color: var(--brand-text); font-weight: 600; }
+.nb-sep { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--line); }
+
+/* The notebook's name on tiles in "All notes" */
+.note-end { display: flex; align-items: center; gap: 6px; flex: none; }
+.note-nb {
+  max-width: 96px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgb(30 42 49 / 0.08);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tile-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:root[data-effective="dark"] .note-nb { background: rgb(255 255 255 / 0.1); }
+.note-item[aria-current="true"] .note-nb { background: rgb(255 255 255 / 0.18); color: var(--tile-active-muted); }
+
+/* Search matches */
+mark { background: var(--highlight); color: var(--highlight-ink); border-radius: 3px; padding: 0 1px; }
+.note-item[aria-current="true"] mark { background: rgb(255 255 255 / 0.3); color: inherit; }
+
+/* Sort: a small control, out of the way */
+.sort { position: relative; gap: 4px; padding: 4px 6px; border-radius: 8px; color: var(--muted); cursor: pointer; }
+.sort:hover { background: var(--surface-2); color: var(--ink); }
+.sort-label { font-weight: 600; color: var(--ink); }
+.sort select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.sort[hidden] { display: none; }
+
+/* ---------- Backup reminder ---------- */
+
+.nudge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--highlight);
+  color: var(--highlight-ink);
+  font-size: 13px;
+}
+.nudge[hidden] { display: none; }
+.nudge-actions { display: flex; gap: 6px; margin-left: auto; }
+.nudge-btn {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font-weight: 600;
+}
+.nudge-btn.primary { background: var(--brand); color: var(--brand-ink); }
+
+/* ---------- Trash ---------- */
+
+.trash-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.trash-empty {
+  margin-left: auto;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+}
+.trash-label, .restore-btn { display: none; }
+.editor[data-trash] .trash-label {
+  display: block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.editor[data-trash] .restore-btn {
+  display: block;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-weight: 600;
+}
+.editor[data-trash] .fmt-toggle,
+.editor[data-trash] .pin-btn { display: none; }
+.editor[data-trash] .page { opacity: 0.8; }
+
+/* ---------- Tag suggestions while typing # ---------- */
+
+.editor { position: relative; }
+.tag-suggest {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  max-width: calc(100% - 32px);
+  overflow-x: auto;
+  padding: 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  animation: pop-in 0.14s ease-out;
+}
+.tag-suggest[hidden] { display: none; }
+.tag-suggestion {
+  flex: none;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--highlight);
+  color: var(--highlight-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---------- Dialogs ---------- */
+
+.dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop);
+}
+.dialog::backdrop { background: rgb(30 42 49 / 0.35); }
+.dialog-form { display: flex; flex-direction: column; gap: 12px; padding: 20px; }
+.dialog-title { margin: 0; font: 600 22px/1.3 var(--font-write); }
+.dialog-message { margin: 0; color: var(--muted); }
+.dialog-message[hidden], .dialog-input[hidden] { display: none; }
+.dialog-input {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.dialog-input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.dialog-btn {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.dialog-btn.primary { background: var(--brand); color: var(--brand-ink); }
+.dialog-btn.danger { background: #b3261e; color: #ffffff; }
+
+.shortcuts { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 0; align-items: baseline; }
+.shortcuts dt { white-space: nowrap; }
+.shortcuts dd { margin: 0; color: var(--muted); }
+kbd {
+  display: inline-block;
+  min-width: 24px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  box-shadow: inset 0 -1px 0 var(--line);
+  font: 600 12px/1.6 var(--font-ui);
+  text-align: center;
+}
+
+/* ---------- Swipe tiles (phones) ---------- */
+
+.note-li { position: relative; border-radius: 14px; }
+.note-li[data-swipe]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  border-radius: 14px;
+  font-weight: 600;
+  font-size: 14px;
+  color: #ffffff;
+}
+.note-li[data-swipe="trash"]::before { content: "Move to Trash"; justify-content: flex-end; background: #6b3a3a; }
+.note-li[data-swipe="pin"]::before { content: "Pin / Unpin"; justify-content: flex-start; background: var(--accent); }
+.note-li.swipe-armed[data-swipe="trash"]::before { background: #b3261e; }
+.note-li.swipe-armed[data-swipe="pin"]::before { background: #0e4a72; }
+.note-li[data-swipe] .note-item { position: relative; }
+
+/* ---------- Motion (small, and off for "reduce motion") ---------- */
+
+@keyframes pop-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes tick-pop { 0% { transform: scale(0.7); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
+@keyframes pin-settle { 0% { transform: translateY(-6px) rotate(-18deg); } 55% { transform: translateY(2px) rotate(6deg); } 100% { transform: none; } }
+@keyframes slide-in { from { opacity: 0.4; transform: translateX(32px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0.4; } to { opacity: 1; } }
+
+.check-box.pop { animation: tick-pop 0.28s ease-out; }
+.pin-btn.settle svg { animation: pin-settle 0.42s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ---------- Phone: one screen at a time ---------- */
+
+@media (max-width: 719px) {
+  :root { --lh: 30px; }
+
+  .sidebar {
+    flex: 1;
+    padding: calc(20px + env(safe-area-inset-top)) 16px 0;
+  }
+  .sidebar-head .new-btn { display: none; } /* the round + at the bottom does this on phones */
+
+  /* Collapsing is a desktop feature: phones always show the list screen. */
+  .collapse-btn, body[data-list="collapsed"] .rail { display: none; }
+  body[data-list="collapsed"] .sidebar { display: flex; }
+
+  .note-list { padding-bottom: 104px; transform: translateY(var(--pull, 0px)); }
+  .note-item { touch-action: pan-y; } /* lets a sideways swipe reach the app */
+  .notebook-btn { min-height: 44px; }
+
+  /* Tag suggestions sit just above the keyboard tools */
+  .tag-suggest { position: fixed; bottom: calc(var(--kb-offset, 0px) + 66px + env(safe-area-inset-bottom)); }
+
+  .fab {
+    position: absolute;
+    right: 20px;
+    bottom: max(28px, calc(16px + env(safe-area-inset-bottom)));
+    z-index: 31; /* above the dimmed screen while the new-note menu is open */
+    width: 60px;
+    height: 60px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: var(--brand);
+    color: var(--brand-ink);
+    box-shadow: 0 6px 18px rgb(14 74 114 / 0.35);
+  }
+
+  .editor-wrap { padding: 0; }
+  .editor {
+    border-radius: 0;
+    box-shadow: none;
+    padding: calc(16px + env(safe-area-inset-top)) 12px 0;
+  }
+  .editor-bar { gap: 4px; }
+  .back { display: flex; }
+  .meta { text-align: center; font-size: 12px; }
+  .icon-btn { width: 44px; height: 44px; }
+
+  .page { padding: 20px 12px 0; }
+  .title { font-size: 30px; }
+  .body { font-size: 18px; margin-top: 10px; }
+  .check-text { font-size: 18px; }
+  .image-open { width: 132px; height: 104px; }
+  .image-add { width: 104px; height: 104px; }
+
+  /* The Aa tray becomes a sheet along the bottom (above the keyboard when it's open). */
+  .tray.as-sheet {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    bottom: calc(var(--kb-offset, 0px) + 60px + env(safe-area-inset-bottom));
+  }
+
+  /* Writing tools pinned just above the on-screen keyboard */
+  .kb-tools {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--kb-offset, 0px);
+    z-index: 29;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+  }
+  .kb-tools[hidden] { display: none; }
+  .kb-btn {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--ink);
+  }
+  .kb-btn:active { background: var(--highlight); }
+  .kb-spacer { flex: 1; }
+  .kb-color {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: conic-gradient(var(--c-cornflower) 0 25%, var(--c-chartreuse) 0 50%, var(--c-peach) 0 75%, var(--c-mint) 0);
+    box-shadow: inset 0 0 0 1px rgb(30 42 49 / 0.2);
+  }
+  body[data-kb="open"] .page { padding-bottom: 64px; } /* keep the last lines clear of the tools */
+
+  .toast { bottom: calc(104px + env(safe-area-inset-bottom)); }
+  body[data-view="editor"] .toast { bottom: calc(var(--kb-offset, 0px) + 72px + env(safe-area-inset-bottom)); }
+
+  body[data-view="list"] .editor-wrap { display: none; }
+  body[data-view="editor"] .sidebar { display: none; }
+
+  /* Opening a note slides it in; going back fades the list in. */
+  body[data-view="editor"] .editor-wrap { animation: slide-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  body[data-view="list"] .sidebar { animation: fade-in 0.2s ease-out; }
+}
+
+/* ---------- Sync with another device ---------- */
+
+.sync { width: min(620px, calc(100vw - 32px)); }
+.sync[open] { display: block; }
+.sync-step { display: none; flex-direction: column; gap: 12px; padding: 28px; }
+.sync[data-step="code"] [data-for="code"],
+.sync[data-step="howto"] [data-for="howto"],
+.sync[data-step="confirm"] [data-for="confirm"],
+.sync[data-step="syncing"] [data-for="syncing"],
+.sync[data-step="done"] [data-for="done"],
+.sync[data-step="failed"] [data-for="failed"] { display: flex; }
+.sync .dialog-title { font-size: 26px; padding-right: 40px; }
+.sync-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+.sync-close:hover { background: var(--surface-2); color: var(--ink); }
+.sync[data-step="syncing"] .sync-close { display: none; }
+
+.sync-code { display: flex; flex-wrap: wrap; align-items: center; gap: 28px; margin-top: 12px; }
+/* The code stays dark on white in dark mode too, so cameras read it. */
+.sync-qr {
+  flex: none;
+  width: 216px;
+  height: 216px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+.sync-qr svg { display: block; width: 100%; height: 100%; fill: #1e2a31; }
+.sync-qr:empty { background: var(--surface-2); }
+.sync-steps { flex: 1 1 220px; margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 14px; }
+.sync-steps li { display: flex; gap: 12px; align-items: flex-start; }
+.sync-num {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--highlight);
+  color: var(--brand-text);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.sync-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.sync-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--highlight); }
+.sync.waiting .sync-dot { animation: sync-pulse 1.4s ease-in-out infinite; }
+@keyframes sync-pulse { 50% { box-shadow: 0 0 0 7px transparent; } }
+.sync-status-text { flex: 1; font-weight: 600; }
+.sync-timer { font-size: 13px; color: var(--muted); }
+.sync-private { display: flex; gap: 8px; margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.sync-private svg { flex: none; margin-top: 2px; }
+.sync-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-top: 8px; }
+.sync-link { padding: 8px 0; border: 0; background: none; color: var(--brand-text); font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.sync-link[hidden] { display: none; }
+
+.sync-counts { display: flex; gap: 12px; margin-top: 12px; }
+.sync-count { flex: 1; display: flex; flex-direction: column; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); font-size: 13px; color: var(--muted); }
+.sync-count strong { font: 600 28px/1.3 var(--font-write); color: var(--ink); }
+.sync-connecting { margin: 0; color: var(--muted); }
+.sync-connecting[hidden] { display: none; }
+.sync-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+.sync-actions .dialog-btn:disabled { opacity: 0.5; cursor: default; }
+
+.sync-center { align-items: center; text-align: center; padding-block: 40px; }
+.sync-spinner { width: 72px; height: 72px; border-radius: 50%; border: 6px solid var(--highlight); border-top-color: var(--brand); animation: sync-spin 1s linear infinite; }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
+.sync-center .dialog-title { padding-right: 0; }
+.sync-bar { width: 100%; height: 8px; border-radius: 999px; background: var(--highlight); overflow: hidden; }
+.sync-bar > div { width: 0; height: 100%; background: var(--brand); transition: width 0.3s ease; }
+.sync-small { font-size: 14px; }
+
+.sync-badge { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 50%; background: var(--highlight); color: var(--brand-text); }
+.sync-badge.warn { background: #fce3d6; color: #8a3a12; }
+.sync-stats { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--line); }
+.sync-stats li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.sync-notice { margin: 4px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); font-size: 14px; }
+.sync-notice[hidden] { display: none; }
+.sync-tips { margin: 4px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sync.waiting .sync-dot, .sync-spinner { animation: none; }
+}
+
+/* Phones: the sync screens fill the screen, buttons at the bottom within thumb reach. */
+@media (max-width: 719px) {
+  .sync {
+    width: 100vw;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+  }
+  .sync-step {
+    min-height: 100%;
+    box-sizing: border-box;
+    padding: calc(56px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
+  }
+  .sync .dialog-title.sync-big { font-size: 30px; line-height: 1.2; }
+  .sync-actions { flex-direction: column-reverse; margin-top: auto; padding-top: 24px; }
+  .sync-actions .dialog-btn { min-height: 52px; font-size: 17px; }
+  .sync-actions .dialog-btn:not(.primary) { background: transparent; color: var(--brand-text); }
+  .sync-center { justify-content: center; }
+  .sync-close { top: calc(12px + env(safe-area-inset-top)); }
+}
+.sync-tips[hidden], .sync-actions .dialog-btn[hidden] { display: none; }
+.sync-stats[hidden] { display: none; }
