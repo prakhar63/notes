@@ -47,6 +47,11 @@ const searchEl = $('#search');
 const sortEl = $('#sort');
 const tagFilterEl = $('#tag-filter');
 const noteTagsEl = $('#note-tags');
+const noteDateEl = $('#note-date');
+const pageEl = $('.page');
+const trayEl = $('#tray');
+const paperEl = $('#paper-styles');
+const kbToolsEl = $('#kb-tools');
 
 const colorVar = (color) => `var(--c-${color})`;
 
@@ -174,6 +179,7 @@ function setActiveTag(tag) {
 }
 
 function renderList() {
+  renderToday();
   renderTagFilter();
   const shown = visibleNotes();
   const total = `${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`;
@@ -191,14 +197,13 @@ function renderList() {
   const dateOf = (note) => (sortBy === 'created' ? note.createdAt : note.updatedAt);
 
   const item = (note) => {
+    // The tile wears the note's color (lightly); the open note is deep blue.
     const btn = el('button', 'note-item');
     btn.type = 'button';
     btn.dataset.id = note.id;
+    btn.dataset.color = note.color;
+    btn.style.setProperty('--c', colorVar(note.color));
     if (note.id === activeId) btn.setAttribute('aria-current', 'true');
-
-    const dot = el('span', 'dot');
-    dot.dataset.color = note.color;
-    dot.style.setProperty('--c', colorVar(note.color));
 
     // Pinned notes show a pin where the date would be.
     const end = isPinned(note) ? el('span', 'note-pin') : el('span', 'note-date', shortDate(dateOf(note)));
@@ -208,42 +213,99 @@ function renderList() {
       end.setAttribute('aria-label', 'Pinned');
     }
 
+    const main = el('span', 'note-main');
     const row = el('span', 'note-row');
-    row.append(dot, el('span', 'note-title', displayTitle(note)));
-    if (imagesOf(note).length) {
-      const pic = el('span', 'note-has-images');
-      pic.innerHTML = IMAGE_ICON;
-      pic.setAttribute('role', 'img');
-      pic.setAttribute('aria-label', 'Has images');
-      row.append(pic);
+    row.append(el('span', 'dot'), el('span', 'note-title', displayTitle(note)), end);
+    main.append(row, el('span', 'note-preview', preview(note) || ' '));
+
+    // Checklists: a thin progress line ("4 of 6").
+    if (isChecklist(note)) {
+      const filled = note.items.filter((it) => it.text.trim());
+      if (filled.length) {
+        const done = filled.filter((it) => it.done).length;
+        const progress = el('span', 'note-progress');
+        const bar = el('span', 'note-progress-bar');
+        const fill = el('span', 'note-progress-fill');
+        fill.style.width = `${Math.round((done / filled.length) * 100)}%`;
+        bar.append(fill);
+        progress.append(bar, el('span', 'note-progress-text', `${done} of ${filled.length}`));
+        main.append(progress);
+      }
     }
-    row.append(end);
-    btn.append(row, el('span', 'note-preview', preview(note) || ' '));
+    btn.append(main);
+
+    // Notes with pictures: the first one as a small thumbnail.
+    const [firstImage] = imagesOf(note);
+    if (firstImage) {
+      const thumb = el('img', 'note-thumb');
+      thumb.alt = '';
+      thumb.decoding = 'async';
+      btn.append(thumb);
+      imageUrl(firstImage).then((url) => { if (url) thumb.src = url; else thumb.remove(); });
+    }
 
     const li = el('li');
     li.append(btn);
     return li;
   };
 
-  // Pinned notes sit in their own section above everything else, in the current sort order.
-  const pinned = shown.filter(isPinned);
-  if (!pinned.length) {
-    listEl.replaceChildren(...shown.map(item));
-    return;
-  }
   const section = (label, extra) => {
     const li = el('li', 'list-section', label);
-    li.setAttribute('aria-hidden', 'true'); // screen readers hear "Pinned" on each tile instead
+    li.setAttribute('aria-hidden', 'true'); // the tiles carry the information; headings are visual
     if (extra) li.append(el('span', 'list-section-count', extra));
     return li;
   };
+
+  // Pinned notes first; then, when sorted by last edit, a diary-like Today / Yesterday / … grouping.
+  const parts = [];
+  const pinned = shown.filter(isPinned);
   const others = shown.filter((n) => !isPinned(n));
-  const pinTotal = notes.filter(isPinned).length;
-  listEl.replaceChildren(
-    section('Pinned', `· ${pinTotal} of ${MAX_PINS}`),
-    ...pinned.map(item),
-    ...(others.length ? [section('Notes'), ...others.map(item)] : []),
-  );
+  if (pinned.length) {
+    parts.push(section('Pinned', `· ${notes.filter(isPinned).length} of ${MAX_PINS}`), ...pinned.map(item));
+  }
+  if (sortBy === 'updated') {
+    let lastGroup = null;
+    for (const note of others) {
+      const group = dayGroup(note.updatedAt);
+      if (group !== lastGroup) parts.push(section(group));
+      lastGroup = group;
+      parts.push(item(note));
+    }
+  } else if (others.length) {
+    if (pinned.length) parts.push(section('Notes'));
+    parts.push(...others.map(item));
+  }
+  listEl.replaceChildren(...parts);
+}
+
+const startOfToday = () => new Date().setHours(0, 0, 0, 0);
+
+function dayGroup(ts) {
+  const today = startOfToday();
+  if (ts >= today) return 'Today';
+  if (ts >= today - DAY) return 'Yesterday';
+  if (ts >= today - 6 * DAY) return 'Earlier this week';
+  return 'Earlier';
+}
+
+// Journal header: "Saturday" / "18 October · 2 notes today"
+function renderToday() {
+  const now = new Date();
+  $('#today-day').textContent = now.toLocaleDateString(undefined, { weekday: 'long' });
+  const edited = notes.filter((n) => n.updatedAt >= startOfToday()).length;
+  const date = now.toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+  $('#today-sub').textContent = edited ? `${date} · ${edited} ${edited === 1 ? 'note' : 'notes'} today` : date;
+}
+
+// "Edited today, 9:41" above the title
+function editedLabel(ts) {
+  const time = new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const today = startOfToday();
+  if (ts >= today) return `Edited today, ${time}`;
+  if (ts >= today - DAY) return `Edited yesterday, ${time}`;
+  const d = new Date(ts);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return `Edited ${d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', ...(sameYear ? {} : { year: 'numeric' }) })}`;
 }
 
 const activeNote = () => notes.find((n) => n.id === activeId);
@@ -259,6 +321,14 @@ const PIN_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="t
 const pinBtn = $('#pin');
 const isPinned = (note) => Number.isFinite(note.pinnedAt);
 
+// Play a one-off CSS animation class (tick pop, pin settle); CSS turns these off for reduced motion.
+function bounce(node, cls) {
+  node.classList.remove(cls);
+  void node.offsetWidth; // restart if it was mid-animation
+  node.classList.add(cls);
+  node.addEventListener('animationend', () => node.classList.remove(cls), { once: true });
+}
+
 // Pinning is not an edit, so it doesn't change "last edited" or move the note in its section.
 function togglePin() {
   const note = activeNote();
@@ -273,6 +343,7 @@ function togglePin() {
   } else {
     note.pinnedAt = Date.now();
     showToast('Pinned to the top of your list', { ms: 2500 });
+    bounce(pinBtn, 'settle');
   }
   scheduleSave();
   renderEditor();
@@ -298,14 +369,16 @@ function scheduleSave() {
   saveTimer = setTimeout(flushSave, SAVE_DELAY);
 }
 
+// Quiet status: only speaks up while saving, on a problem, or with a checklist's progress.
+// When it was last edited sits in small type above the title instead.
 function renderMeta(note) {
+  noteDateEl.textContent = editedLabel(note.updatedAt);
   if (saveFailed) metaEl.textContent = 'Not saved — browser storage is full or blocked';
   else if (saveTimer) metaEl.textContent = 'Saving…';
-  else metaEl.textContent = `Saved · edited ${relativeTime(note.updatedAt)}`;
-  if (isChecklist(note) && !saveFailed) {
+  else if (isChecklist(note)) {
     const items = note.items.filter((it) => it.text.trim());
-    metaEl.textContent = `${items.filter((it) => it.done).length} of ${items.length} done · ${metaEl.textContent}`;
-  }
+    metaEl.textContent = items.length ? `${items.filter((it) => it.done).length} of ${items.length} done` : '';
+  } else metaEl.textContent = '';
 }
 
 // "Tags in this note:" under the text; each chip filters the list by that tag.
@@ -325,12 +398,16 @@ function renderEditor() {
   const note = activeNote();
   editorEl.toggleAttribute('data-empty', !note);
   if (!note) return;
-  editorEl.style.setProperty('--c', colorVar(note.color));
-  editorEl.style.setProperty('--note-c', colorVar(note.color));
-  editorEl.dataset.color = note.color;
   titleEl.value = note.title;
   bodyEl.value = note.body;
-  editorEl.dataset.kind = isChecklist(note) ? 'checklist' : 'text';
+  const kind = isChecklist(note) ? 'checklist' : 'text';
+  editorEl.dataset.kind = kind;
+  trayEl.dataset.kind = kind;
+  kbToolsEl.dataset.kind = kind;
+  pageEl.dataset.paper = note.paper ?? 'plain';
+  for (const opt of paperEl.querySelectorAll('.paper-opt')) {
+    opt.setAttribute('aria-checked', String(opt.dataset.paper === (note.paper ?? 'plain')));
+  }
   checklistEl.hidden = !isChecklist(note);
   if (isChecklist(note)) renderChecklist(note);
   renderImages(note);
@@ -479,6 +556,7 @@ checklistEl.addEventListener('change', (e) => {
   const item = note.items[rowIndex(e.target)];
   item.done = e.target.checked;
   e.target.closest('.check-item').classList.toggle('done', item.done);
+  if (item.done) bounce(e.target, 'pop');
   checklistChanged(note);
 });
 
@@ -547,7 +625,6 @@ checklistEl.addEventListener('click', (e) => {
 
 // ---------- Images under the text ----------
 
-const IMAGE_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="m21 15-5-5L5 19"/></svg>';
 const noteImagesEl = $('#note-images');
 const imageRowEl = $('#note-images-row');
 const imageFileEl = $('#image-file');
@@ -641,7 +718,7 @@ function removeImage(index) {
   });
 }
 
-$('#add-image').addEventListener('click', () => imageFileEl.click());
+$('#add-image').addEventListener('click', () => { closeTray(); imageFileEl.click(); });
 imageFileEl.addEventListener('change', () => {
   const files = [...imageFileEl.files];
   imageFileEl.value = ''; // so picking the same picture again still fires
@@ -1130,16 +1207,126 @@ bodyEl.addEventListener('beforeinput', (e) => {
 });
 
 // The Numbered / Bulleted list buttons work on the note text's current line(s).
-for (const [id, kind] of [['#list-numbered', 'numbered'], ['#list-bullet', 'bullet']]) {
+function applyListKind(kind) {
+  const result = toggleList(bodyEl.value, bodyEl.selectionStart, bodyEl.selectionEnd, kind);
+  bodyEl.focus();
+  applyEdit(bodyEl, result);
+}
+
+// Tools that act on the text keep the text box focused (and its selection, and the phone keyboard up).
+const keepFocus = (btn) => btn.addEventListener('pointerdown', (e) => e.preventDefault());
+
+for (const [id, kind] of [['#list-numbered', 'numbered'], ['#list-bullet', 'bullet'], ['#kb-numbered', 'numbered'], ['#kb-bullet', 'bullet']]) {
   const btn = $(id);
-  // Keep the text box focused (and its selection) when the button is pressed.
-  btn.addEventListener('pointerdown', (e) => e.preventDefault());
+  keepFocus(btn);
   btn.addEventListener('click', () => {
-    const result = toggleList(bodyEl.value, bodyEl.selectionStart, bodyEl.selectionEnd, kind);
-    bodyEl.focus();
-    applyEdit(bodyEl, result);
+    closeTray();
+    applyListKind(kind);
   });
 }
+
+// ---------- Aa tray: color, page style, insert ----------
+
+const fmtToggleEl = $('#fmt-toggle');
+let trayAnchor = null;
+
+function openTray(anchor) {
+  trayAnchor = anchor;
+  trayEl.hidden = false;
+  fmtToggleEl.setAttribute('aria-expanded', 'true');
+  const asSheet = phoneLayout.matches;
+  trayEl.classList.toggle('as-sheet', asSheet);
+  if (asSheet) {
+    trayEl.style.top = trayEl.style.left = '';
+  } else {
+    const r = anchor.getBoundingClientRect();
+    trayEl.style.top = `${r.bottom + 8}px`;
+    trayEl.style.left = `${Math.max(8, Math.min(r.left, innerWidth - trayEl.offsetWidth - 8))}px`;
+  }
+}
+
+function closeTray() {
+  if (trayEl.hidden) return;
+  trayEl.hidden = true;
+  fmtToggleEl.setAttribute('aria-expanded', 'false');
+  trayAnchor = null;
+}
+
+for (const btn of [fmtToggleEl, $('#kb-tray')]) {
+  keepFocus(btn);
+  btn.addEventListener('click', () => (trayEl.hidden ? openTray(btn) : closeTray()));
+}
+// (Delegated, since the color swatches are re-created for each note.)
+trayEl.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
+
+document.addEventListener('pointerdown', (e) => {
+  if (trayEl.hidden || trayEl.contains(e.target) || trayAnchor?.contains(e.target)) return;
+  closeTray();
+});
+
+// Page style is a property of the note, like its color; it isn't an edit either.
+paperEl.addEventListener('click', (e) => {
+  const opt = e.target.closest('.paper-opt');
+  const note = activeNote();
+  if (!opt || !note) return;
+  if (opt.dataset.paper === 'plain') delete note.paper;
+  else note.paper = opt.dataset.paper;
+  scheduleSave();
+  renderEditor();
+});
+
+// ---------- Phones: tools above the keyboard ----------
+
+// Keep the strip just above the on-screen keyboard (iOS reports it through visualViewport).
+function placeKeyboardTools() {
+  const vv = window.visualViewport;
+  const offset = vv ? Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop)) : 0;
+  document.documentElement.style.setProperty('--kb-offset', `${offset}px`);
+}
+window.visualViewport?.addEventListener('resize', placeKeyboardTools);
+window.visualViewport?.addEventListener('scroll', placeKeyboardTools);
+
+const isWritingField = (node) => node === titleEl || node === bodyEl || node?.classList?.contains('check-text');
+
+editorEl.addEventListener('focusin', (e) => {
+  if (!phoneLayout.matches || !isWritingField(e.target)) return;
+  kbToolsEl.hidden = false;
+  document.body.dataset.kb = 'open';
+  placeKeyboardTools();
+});
+editorEl.addEventListener('focusout', () => {
+  // Wait a moment: focus may be moving to another field in the note.
+  setTimeout(() => {
+    if (isWritingField(document.activeElement)) return;
+    kbToolsEl.hidden = true;
+    delete document.body.dataset.kb;
+  }, 0);
+});
+for (const btn of kbToolsEl.querySelectorAll('button')) keepFocus(btn);
+$('#kb-image').addEventListener('click', () => imageFileEl.click());
+$('#kb-hide').addEventListener('click', () => document.activeElement?.blur());
+
+// ---------- Light / dark ----------
+
+const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+const themeBtn = $('#theme-toggle');
+
+function applyTheme() {
+  const chosen = document.documentElement.dataset.theme; // 'light' | 'dark' | undefined (= system)
+  const effective = chosen ?? (darkQuery.matches ? 'dark' : 'light');
+  document.documentElement.dataset.effective = effective;
+  document.querySelector('meta[name="theme-color"]').content = effective === 'dark' ? '#141D22' : '#EEF5FB';
+  themeBtn.setAttribute('aria-label', effective === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+}
+
+themeBtn.addEventListener('click', () => {
+  const next = document.documentElement.dataset.effective === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('notes.theme', next); } catch { /* not remembered; still works */ }
+  applyTheme();
+});
+darkQuery.addEventListener('change', applyTheme);
+applyTheme();
 
 // Enter in the title moves on to the body, like a notebook heading.
 titleEl.addEventListener('keydown', (e) => {
@@ -1151,6 +1338,11 @@ titleEl.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !trayEl.hidden) {
+    closeTray();
+    fmtToggleEl.focus();
+    return;
+  }
   const mod = e.ctrlKey || e.metaKey;
   // AltGr reports as Ctrl+Alt on Windows; AltGr+N types a letter on some layouts.
   const altGr = e.getModifierState?.('AltGraph');
