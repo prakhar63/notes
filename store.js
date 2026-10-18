@@ -30,11 +30,15 @@ function normalize(raw) {
     delete note.kind;
     delete note.items;
   }
+  // Images: a list of ids; the pictures themselves live in IndexedDB (images.js).
+  if (Array.isArray(raw.images)) note.images = raw.images.filter((id) => typeof id === 'string');
+  else delete note.images;
   return note;
 }
 
 const isBlank = (note) =>
-  !note.title.trim() && !note.body.trim() && !(note.items ?? []).some((it) => it.text.trim());
+  !note.title.trim() && !note.body.trim() && !(note.items ?? []).some((it) => it.text.trim())
+  && !(note.images ?? []).length;
 
 /**
  * Returns the saved notes, or null on first run (nothing saved yet).
@@ -74,16 +78,16 @@ export function saveNotes(notes) {
 // ---------- Backup files ----------
 
 const BACKUP_APP = 'notes';
-const BACKUP_VERSION = 1;
+const BACKUP_VERSION = 2; // 2 adds `images`: { id: data URL }
 
-/** The JSON text of a backup file holding all notes. */
-export function backupJSON(notes) {
-  return JSON.stringify({ app: BACKUP_APP, version: BACKUP_VERSION, exportedAt: Date.now(), notes }, null, 2);
+/** The JSON text of a backup file holding all notes and, optionally, their images. */
+export function backupJSON(notes, images = {}) {
+  return JSON.stringify({ app: BACKUP_APP, version: BACKUP_VERSION, exportedAt: Date.now(), notes, images }, null, 2);
 }
 
 /**
- * Reads a backup file's text. Returns { notes } or { error } with a message
- * fit to show the user. Also accepts a bare array of notes.
+ * Reads a backup file's text. Returns { notes, images } or { error } with a message
+ * fit to show the user. Also accepts a bare array of notes (and version 1 files).
  */
 export function parseBackup(text) {
   let data;
@@ -101,7 +105,13 @@ export function parseBackup(text) {
   }
   const notes = list.map(normalize);
   if (notes.some((n) => !n)) return { error: 'That backup is damaged: some notes are unreadable.' };
-  return { notes: notes.filter((n) => !isBlank(n)) };
+  const images = {};
+  if (!Array.isArray(data) && data.images && typeof data.images === 'object') {
+    for (const [id, url] of Object.entries(data.images)) {
+      if (typeof url === 'string' && url.startsWith('data:image/')) images[id] = url;
+    }
+  }
+  return { notes: notes.filter((n) => !isBlank(n)), images };
 }
 
 /**

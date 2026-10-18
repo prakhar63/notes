@@ -1,5 +1,8 @@
 import { loadNotes, saveNotes, STORAGE_KEY, backupJSON, parseBackup, mergeNotes } from './store.js';
 import { listEnter, listIndent, toggleList } from './lists.js';
+import {
+  prepareImage, addImage, getImage, cleanUpImages, blobToDataURL, dataURLToBlob,
+} from './images.js';
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -206,7 +209,15 @@ function renderList() {
     }
 
     const row = el('span', 'note-row');
-    row.append(dot, el('span', 'note-title', displayTitle(note)), end);
+    row.append(dot, el('span', 'note-title', displayTitle(note)));
+    if (imagesOf(note).length) {
+      const pic = el('span', 'note-has-images');
+      pic.innerHTML = IMAGE_ICON;
+      pic.setAttribute('role', 'img');
+      pic.setAttribute('aria-label', 'Has images');
+      row.append(pic);
+    }
+    row.append(end);
     btn.append(row, el('span', 'note-preview', preview(note) || ' '));
 
     const li = el('li');
@@ -236,8 +247,10 @@ function renderList() {
 }
 
 const activeNote = () => notes.find((n) => n.id === activeId);
+const imagesOf = (note) => note.images ?? [];
 const isBlank = (note) =>
-  !note.title.trim() && !note.body.trim() && !(note.items ?? []).some((it) => it.text.trim());
+  !note.title.trim() && !note.body.trim() && !(note.items ?? []).some((it) => it.text.trim())
+  && !imagesOf(note).length;
 
 // ---------- Pins ----------
 
@@ -320,6 +333,7 @@ function renderEditor() {
   editorEl.dataset.kind = isChecklist(note) ? 'checklist' : 'text';
   checklistEl.hidden = !isChecklist(note);
   if (isChecklist(note)) renderChecklist(note);
+  renderImages(note);
   renderMeta(note);
   renderNoteTags(note);
   hideTagHint();
@@ -531,6 +545,197 @@ checklistEl.addEventListener('click', (e) => {
   checklistChanged(note);
 });
 
+// ---------- Images under the text ----------
+
+const IMAGE_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="m21 15-5-5L5 19"/></svg>';
+const noteImagesEl = $('#note-images');
+const imageRowEl = $('#note-images-row');
+const imageFileEl = $('#image-file');
+const imageUrls = new Map(); // image id -> object URL (or null if the image is missing)
+
+async function imageUrl(id) {
+  if (!imageUrls.has(id)) {
+    const rec = await getImage(id).catch(() => null);
+    imageUrls.set(id, rec ? URL.createObjectURL(rec.blob) : null);
+  }
+  return imageUrls.get(id);
+}
+
+function renderImages(note) {
+  const ids = imagesOf(note);
+  noteImagesEl.hidden = !ids.length;
+  $('#note-images-count').textContent = `${ids.length} ${ids.length === 1 ? 'image' : 'images'}`;
+
+  const tiles = ids.map((id, i) => {
+    const tile = el('div', 'image-tile');
+    tile.dataset.index = i;
+    const open = el('button', 'image-open');
+    open.type = 'button';
+    open.setAttribute('aria-label', `Open image ${i + 1} full size`);
+    const img = el('img');
+    img.alt = '';
+    img.decoding = 'async';
+    open.append(img);
+    imageUrl(id).then((url) => {
+      if (url) img.src = url;
+      else { tile.classList.add('missing'); open.textContent = 'Image unavailable'; }
+    });
+    const remove = el('button', 'image-remove');
+    remove.type = 'button';
+    remove.setAttribute('aria-label', `Remove image ${i + 1}`);
+    remove.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+    tile.append(open, remove);
+    return tile;
+  });
+
+  const add = el('button', 'image-add');
+  add.type = 'button';
+  add.setAttribute('aria-label', 'Add image');
+  add.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+  imageRowEl.replaceChildren(...tiles, add);
+}
+
+// Shrink, store and attach picked / pasted / dropped pictures to the open note.
+async function addImages(files) {
+  const note = activeNote();
+  const pictures = [...files].filter((f) => f.type.startsWith('image/'));
+  if (!note || !pictures.length) return;
+  showToast(pictures.length === 1 ? 'Adding image…' : `Adding ${pictures.length} images…`, { ms: 30000 });
+  navigator.storage?.persist?.().catch(() => {}); // ask the browser not to clear stored pictures
+  let failed = 0;
+  for (const file of pictures) {
+    try {
+      const id = await addImage(await prepareImage(file));
+      note.images = [...imagesOf(note), id];
+    } catch {
+      failed += 1;
+    }
+  }
+  hideToast();
+  if (failed) showToast(failed === pictures.length ? 'Couldn’t add that image.' : `${failed} images couldn’t be added.`);
+  note.updatedAt = Date.now();
+  scheduleSave();
+  if (note === activeNote()) { renderImages(note); renderMeta(note); }
+  renderList();
+}
+
+function removeImage(index) {
+  const note = activeNote();
+  const ids = [...imagesOf(note)];
+  const [id] = ids.splice(index, 1);
+  note.images = ids;
+  note.updatedAt = Date.now();
+  scheduleSave();
+  renderImages(note);
+  renderList();
+  // The picture stays stored until the next start-up clean-up, so Undo can bring it back.
+  showToast('Image removed', {
+    onUndo: () => {
+      const list = [...imagesOf(note)];
+      list.splice(index, 0, id);
+      note.images = list;
+      scheduleSave();
+      if (note === activeNote()) renderImages(note);
+      renderList();
+    },
+  });
+}
+
+$('#add-image').addEventListener('click', () => imageFileEl.click());
+imageFileEl.addEventListener('change', () => {
+  const files = [...imageFileEl.files];
+  imageFileEl.value = ''; // so picking the same picture again still fires
+  addImages(files);
+});
+
+imageRowEl.addEventListener('click', (e) => {
+  if (e.target.closest('.image-add')) imageFileEl.click();
+  else if (e.target.closest('.image-remove')) removeImage(Number(e.target.closest('.image-tile').dataset.index));
+  else if (e.target.closest('.image-open') && !e.target.closest('.missing')) openViewer(Number(e.target.closest('.image-tile').dataset.index));
+});
+
+// Paste a picture into a note, or drop one onto it (desktop).
+editorEl.addEventListener('paste', (e) => {
+  const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+  if (!files.length) return;
+  e.preventDefault();
+  addImages(files);
+});
+editorEl.addEventListener('dragover', (e) => {
+  if ([...(e.dataTransfer?.types ?? [])].includes('Files') && activeNote()) e.preventDefault();
+});
+editorEl.addEventListener('drop', (e) => {
+  const files = [...(e.dataTransfer?.files ?? [])];
+  if (!files.length) return;
+  e.preventDefault();
+  addImages(files);
+});
+
+// ---------- Full-size image viewer ----------
+
+const viewerEl = $('#viewer');
+const viewerImg = $('#viewer-img');
+let viewerIndex = 0;
+let viewerReturnFocus = null;
+
+async function showViewerImage() {
+  const ids = imagesOf(activeNote());
+  $('#viewer-count').textContent = `${viewerIndex + 1} of ${ids.length}`;
+  $('#viewer-prev').hidden = viewerIndex === 0;
+  $('#viewer-next').hidden = viewerIndex >= ids.length - 1;
+  viewerImg.alt = `Image ${viewerIndex + 1} of ${ids.length}`;
+  viewerImg.src = (await imageUrl(ids[viewerIndex])) ?? '';
+}
+
+function openViewer(index) {
+  viewerIndex = index;
+  viewerReturnFocus = document.activeElement;
+  viewerEl.hidden = false;
+  showViewerImage();
+  $('#viewer-close').focus();
+  // Phones: the back gesture closes the picture rather than leaving the note.
+  if (phoneLayout.matches) history.pushState({ editor: true, viewer: true }, '');
+}
+
+function closeViewer({ fromHistory = false } = {}) {
+  if (viewerEl.hidden) return;
+  if (!fromHistory && history.state?.viewer) { history.back(); return; } // popstate comes back here
+  viewerEl.hidden = true;
+  viewerImg.removeAttribute('src');
+  viewerReturnFocus?.focus?.();
+}
+
+function stepViewer(delta) {
+  const count = imagesOf(activeNote()).length;
+  const next = viewerIndex + delta;
+  if (next < 0 || next >= count) return;
+  viewerIndex = next;
+  showViewerImage();
+}
+
+$('#viewer-close').addEventListener('click', () => closeViewer());
+$('#viewer-prev').addEventListener('click', () => stepViewer(-1));
+$('#viewer-next').addEventListener('click', () => stepViewer(1));
+$('#viewer-remove').addEventListener('click', () => {
+  const index = viewerIndex;
+  closeViewer();
+  removeImage(index);
+});
+viewerEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.stopPropagation(); closeViewer(); }
+  else if (e.key === 'ArrowLeft') stepViewer(-1);
+  else if (e.key === 'ArrowRight') stepViewer(1);
+});
+// Swipe left/right between pictures on touch screens.
+let swipeX = null;
+viewerEl.addEventListener('pointerdown', (e) => { swipeX = e.clientX; });
+viewerEl.addEventListener('pointerup', (e) => {
+  if (swipeX === null) return;
+  const dx = e.clientX - swipeX;
+  swipeX = null;
+  if (Math.abs(dx) > 50) stepViewer(dx < 0 ? 1 : -1);
+});
+
 function updateActive(field, value) {
   const note = activeNote();
   if (!note) return;
@@ -548,23 +753,29 @@ const UNDO_MS = 6000;
 const toastEl = $('#toast');
 const toastMsgEl = $('#toast-msg');
 const undoEl = $('#undo');
-let lastDeleted = null;
+let undoAction = null; // what Undo does for the toast on screen, if anything
 let toastTimer = null;
 
 function hideToast() {
   clearTimeout(toastTimer);
   toastEl.hidden = true;
-  lastDeleted = null;
+  undoAction = null;
 }
 
-// One toast at a time; Undo shows only for a delete.
-function showToast(message, { undo = false, ms = UNDO_MS } = {}) {
+// One toast at a time; Undo shows only when `onUndo` is given.
+function showToast(message, { onUndo = null, ms = UNDO_MS } = {}) {
   clearTimeout(toastTimer);
-  lastDeleted = undo ? lastDeleted : null;
+  undoAction = onUndo;
   toastMsgEl.textContent = message;
-  undoEl.hidden = !undo;
+  undoEl.hidden = !onUndo;
   toastEl.hidden = false;
   toastTimer = setTimeout(hideToast, ms);
+}
+
+function runUndo() {
+  const action = undoAction;
+  hideToast();
+  action?.();
 }
 
 function deleteActive() {
@@ -581,19 +792,15 @@ function deleteActive() {
   renderEditor();
 
   if (isBlank(note)) return; // nothing worth undoing
-  lastDeleted = note;
-  showToast('Note deleted', { undo: true });
+  showToast('Note deleted', { onUndo: () => restoreNote(note) });
 }
 
-function undoDelete() {
-  if (!lastDeleted) return;
+function restoreNote(note) {
   // If the pin slots filled up meanwhile, bring the note back unpinned.
-  if (isPinned(lastDeleted) && notes.filter(isPinned).length >= MAX_PINS) delete lastDeleted.pinnedAt;
-  notes.push(lastDeleted);
-  const id = lastDeleted.id;
-  hideToast();
+  if (isPinned(note) && notes.filter(isPinned).length >= MAX_PINS) delete note.pinnedAt;
+  notes.push(note);
   flushSave();
-  openNote(id);
+  openNote(note.id);
 }
 
 // ---------- Backup: export and import ----------
@@ -607,11 +814,17 @@ function localDate(ts) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function exportNotes() {
+async function exportNotes() {
   backupEl.open = false;
   if (saveTimer) flushSave();
   const keep = notes.filter((n) => !isBlank(n));
-  const blob = new Blob([backupJSON(keep)], { type: 'application/json' });
+  // The backup file carries the notes' images too, so it restores completely on another device.
+  const images = {};
+  for (const id of new Set(keep.flatMap(imagesOf))) {
+    const rec = await getImage(id).catch(() => null);
+    if (rec) images[id] = await blobToDataURL(rec.blob);
+  }
+  const blob = new Blob([backupJSON(keep, images)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = el('a');
   a.href = url;
@@ -629,11 +842,24 @@ async function importNotes(file) {
     showToast('Couldn’t read that file.');
     return;
   }
-  const { notes: incoming, error } = parseBackup(text);
+  const { notes: incoming, images, error } = parseBackup(text);
   if (error) {
     showToast(error);
     return;
   }
+  // Store the backup's images first (skipping ones already here), so notes never point at nothing.
+  let imageFailed = false;
+  for (const [id, url] of Object.entries(images)) {
+    try {
+      if (!(await getImage(id))) {
+        await addImage({ blob: await dataURLToBlob(url) }, id);
+        imageUrls.delete(id); // forget an earlier "Image unavailable"
+      }
+    } catch {
+      imageFailed = true;
+    }
+  }
+  if (imageFailed) showToast('Some images couldn’t be saved — browser storage may be full.');
   if (saveTimer) flushSave();
   const { added, updated } = mergeNotes(notes, incoming);
   flushSave();
@@ -761,11 +987,12 @@ $('#rail-search').addEventListener('click', () => {
 });
 $('#back').addEventListener('click', leaveEditorView);
 window.addEventListener('popstate', () => {
-  if (document.body.dataset.view === 'editor') showList();
+  if (!viewerEl.hidden) closeViewer({ fromHistory: true });
+  else if (document.body.dataset.view === 'editor') showList();
 });
 $('#delete').addEventListener('click', deleteActive);
 pinBtn.addEventListener('click', togglePin);
-$('#undo').addEventListener('click', undoDelete);
+$('#undo').addEventListener('click', runUndo);
 
 searchEl.addEventListener('input', renderList);
 
@@ -978,6 +1205,13 @@ if (firstRun) flushSave();
 if (history.state?.editor) history.replaceState(null, ''); // reloaded mid-edit: we start on the list
 renderList();
 renderEditor();
+
+// Shortly after start-up, delete stored pictures no saved note uses any more (removed images,
+// deleted notes). Reads the saved notes fresh, so another open tab's notes count too.
+setTimeout(() => {
+  const saved = loadNotes() ?? [];
+  cleanUpImages([...saved, ...notes].flatMap(imagesOf)).catch(() => {});
+}, 10000);
 
 if ('serviceWorker' in navigator) {
   // A page that was already run by a worker gets swapped to a new version mid-session:

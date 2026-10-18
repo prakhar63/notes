@@ -346,6 +346,123 @@ body[data-list="collapsed"] .page { max-width: 760px; }
 .menu-scrim { position: fixed; inset: 0; z-index: 25; background: rgb(43 38 33 / 0.28); }
 .new-menu[hidden], .menu-scrim[hidden] { display: none; }
 
+/* ---------- Images under the text ---------- */
+
+.add-image-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px #d8d2c7;
+}
+.add-image-btn:hover { box-shadow: inset 0 0 0 1px var(--muted); }
+
+.note-images {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 0 8px;
+  border-top: 1px solid rgb(43 38 33 / 0.12);
+  font-family: var(--font-ui);
+}
+.note-images[hidden] { display: none; }
+.note-images-count { font-size: 13px; color: var(--muted); }
+.note-images-row { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+.image-tile { position: relative; flex: none; }
+.image-open {
+  display: grid;
+  place-items: center;
+  width: 160px;
+  height: 120px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgb(43 38 33 / 0.08);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: zoom-in;
+}
+.image-open img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.image-tile.missing .image-open { cursor: default; }
+.image-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(43 38 33 / 0.72);
+  color: #ffffff;
+}
+.image-add {
+  flex: none;
+  width: 120px;
+  height: 120px;
+  display: grid;
+  place-items: center;
+  border: 1.5px dashed #b8b0a6;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+}
+.image-add:hover { border-color: var(--muted); color: var(--ink); }
+.note-has-images { display: grid; color: var(--tile-muted); }
+
+/* Full-size viewer */
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: #1e1a17;
+  color: #ffffff;
+}
+.viewer[hidden] { display: none; }
+.viewer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(16px + env(safe-area-inset-top)) 16px 8px;
+}
+.viewer-count { font-size: 13px; opacity: 0.8; }
+.viewer-btn {
+  min-width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.12);
+  color: #ffffff;
+}
+.viewer-btn:hover { background: rgb(255 255 255 / 0.22); }
+.viewer-remove { display: flex; gap: 6px; padding: 0 14px; font-weight: 600; }
+.viewer-img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  padding: 8px 16px calc(24px + env(safe-area-inset-bottom));
+  touch-action: pan-y;
+  user-select: none;
+}
+.viewer-step { position: absolute; top: 50%; transform: translateY(-50%); }
+.viewer-step[hidden] { display: none; }
+.viewer-prev { left: 16px; }
+.viewer-next { right: 16px; }
+
 /* ---------- Checklist notes ---------- */
 
 .editor[data-kind="checklist"] .body,
@@ -712,6 +829,14 @@ body[data-list="collapsed"] .page { max-width: 760px; }
   .pin-btn[aria-pressed="true"] { background: var(--coral); box-shadow: none; }
   .pin-btn[aria-pressed="true"] svg { fill: var(--coral-ink); stroke: var(--coral-ink); }
   .pin-label { display: none; }
+
+  /* Phone: Add image is icon-only too; the status text shortens to fit beside the buttons. */
+  .add-image-btn { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 50%; background: transparent; box-shadow: none; }
+  .add-image-btn svg { width: 22px; height: 22px; }
+  .add-image-label { display: none; }
+  .meta { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .image-open { width: 132px; height: 104px; }
+  .image-add { width: 104px; height: 104px; }
 
   /* Collapsing is a desktop feature: phones always show the list screen. */
   .collapse-btn, body[data-list="collapsed"] .rail { display: none; }
