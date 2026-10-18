@@ -8,7 +8,7 @@
 //
 // On localhost the app is served network-first, so edits show up on reload.
 
-const VERSION = 'aaa661a08c'; // replaced at deploy time; leave as-is in the source
+const VERSION = '0004fa0993'; // replaced at deploy time; leave as-is in the source
 const SHELL_CACHE = `notes-shell-${VERSION}`;
 const FONT_CACHE = 'notes-fonts';
 const DEV = ['localhost', '127.0.0.1', '[::1]'].includes(self.location.hostname);

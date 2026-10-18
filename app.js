@@ -565,8 +565,56 @@ const isWritingField = (node) => node === titleEl || isTextField(node) || node?.
 // Text boxes grow with their text; the page scrolls instead.
 function autosize(ta) {
   if (!ta.offsetParent) return; // not on screen yet (phone list view); sized when shown
+  // Measuring collapses the box for a moment, which would pull the page's scroll back
+  // up (losing your place while typing low on the page): put it back.
+  const top = pageEl.scrollTop;
   ta.style.height = 'auto';
   ta.style.height = `${ta.scrollHeight}px`;
+  pageEl.scrollTop = top;
+}
+
+// Where the caret is in a text box, in px from the box's top: a hidden copy of the
+// text up to the caret, laid out the same way, measured.
+function caretOffset(ta) {
+  const cs = getComputedStyle(ta);
+  const mirror = document.createElement('div');
+  for (const p of ['boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'fontFamily', 'fontSize',
+    'fontWeight', 'fontStyle', 'letterSpacing', 'lineHeight', 'textTransform', 'wordSpacing', 'textIndent', 'tabSize']) {
+    mirror.style[p] = cs[p];
+  }
+  Object.assign(mirror.style, {
+    position: 'absolute', top: '0', left: '-9999px', visibility: 'hidden', borderStyle: 'solid',
+    whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
+  });
+  mirror.textContent = ta.value.slice(0, ta.selectionEnd ?? ta.value.length);
+  const mark = el('span', '', '​');
+  mirror.append(mark);
+  document.body.append(mirror);
+  const bottom = mark.offsetTop + mark.offsetHeight;
+  const lineTop = mark.offsetTop;
+  mirror.remove();
+  return { top: lineTop, bottom };
+}
+
+// Keep the line being typed in view: above the phone's keyboard and the tools strip on it.
+function revealCaret(field = document.activeElement) {
+  if (!isWritingField(field) || !field.isConnected) return;
+  const box = field.getBoundingClientRect();
+  let top = box.top;
+  let bottom = box.bottom;
+  if (field.tagName === 'TEXTAREA') {
+    const caret = caretOffset(field);
+    top = box.top + caret.top - field.scrollTop;
+    bottom = box.top + caret.bottom - field.scrollTop;
+  }
+  const vv = window.visualViewport;
+  let visibleBottom = vv ? vv.offsetTop + vv.height : innerHeight;
+  if (!kbToolsEl.hidden) visibleBottom = Math.min(visibleBottom, kbToolsEl.getBoundingClientRect().top);
+  const visibleTop = pageEl.getBoundingClientRect().top;
+  const margin = 16;
+  if (bottom > visibleBottom - margin) pageEl.scrollTop += bottom - (visibleBottom - margin);
+  else if (top < visibleTop + margin) pageEl.scrollTop -= (visibleTop + margin) - top;
 }
 const autosizeAll = () => blocksEl.querySelectorAll('.block-text').forEach(autosize);
 
@@ -2864,7 +2912,10 @@ function placeKeyboardTools() {
   const offset = vv ? Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop)) : 0;
   document.documentElement.style.setProperty('--kb-offset', `${offset}px`);
 }
-window.visualViewport?.addEventListener('resize', placeKeyboardTools);
+window.visualViewport?.addEventListener('resize', () => {
+  placeKeyboardTools();
+  revealCaret(); // the keyboard just opened (or grew): keep the line in view
+});
 window.visualViewport?.addEventListener('scroll', placeKeyboardTools);
 
 editorEl.addEventListener('focusin', (e) => {
@@ -2872,6 +2923,13 @@ editorEl.addEventListener('focusin', (e) => {
   kbToolsEl.hidden = false;
   document.body.dataset.kb = 'open';
   placeKeyboardTools();
+  setTimeout(() => revealCaret(e.target), 350); // after the keyboard has slid up
+});
+// Typing, new lines, and moving the caret by tapping or with the keys all keep it in view.
+// (Runs after the blocks' own input handling, which may resize or replace the field.)
+editorEl.addEventListener('input', () => revealCaret());
+document.addEventListener('selectionchange', () => {
+  if (document.body.dataset.kb === 'open' || !phoneLayout.matches) revealCaret();
 });
 editorEl.addEventListener('focusout', () => {
   // Wait a moment: focus may be moving to another field in the note.
