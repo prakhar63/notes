@@ -282,7 +282,30 @@ body[data-list="collapsed"] .page { max-width: 760px; }
 }
 .note-tag:hover { background: var(--tile-hover); }
 
-.tag-filter[hidden], .note-tags[hidden] { display: none; }
+/* "Show #tag notes" in the editor bar, after tapping a #tag in the text; it stands in for the save status */
+.tag-hint {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: max-content;
+  margin-left: auto;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--coral);
+  color: var(--coral-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.tag-hint svg { flex: none; }
+.tag-hint-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor[data-tag-hint] .meta { display: none; }
+
+.tag-filter[hidden], .note-tags[hidden], .tag-hint[hidden] { display: none; }
 
 /* "Pinned · 2 of 5" / "Notes" headings in the list */
 .list-section {

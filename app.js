@@ -297,6 +297,7 @@ function renderEditor() {
   bodyEl.value = note.body;
   renderMeta(note);
   renderNoteTags(note);
+  hideTagHint();
   pinBtn.setAttribute('aria-pressed', String(isPinned(note)));
   pinBtn.querySelector('.pin-label').textContent = isPinned(note) ? 'Pinned' : 'Pin';
   pinBtn.title = isPinned(note) ? 'Unpin this note' : `Pin to the top (up to ${MAX_PINS})`;
@@ -543,14 +544,61 @@ tagFilterEl.addEventListener('click', (e) => {
 });
 
 // A tag inside the note: filter the list by it (and on phones, go to the list to see it).
-noteTagsEl.addEventListener('click', (e) => {
-  const chip = e.target.closest('.note-tag');
-  if (!chip) return;
+function filterByTagFromNote(tag) {
+  hideTagHint();
   activeTag = null; // always turn this tag on, never toggle it off
-  setActiveTag(chip.dataset.tag);
+  setActiveTag(tag);
   setListCollapsed(false);
   if (document.body.dataset.view === 'editor' && phoneLayout.matches) leaveEditorView();
+}
+
+noteTagsEl.addEventListener('click', (e) => {
+  const chip = e.target.closest('.note-tag');
+  if (chip) filterByTagFromNote(chip.dataset.tag);
 });
+
+// Tapping a #tag you typed: offer "Show #tag notes" in the top bar rather than jumping
+// straight to the list, so tapping into a tag to edit it still just edits it.
+const tagHintEl = $('#tag-hint');
+
+function tagAtCaret(field) {
+  const pos = field.selectionStart;
+  if (pos !== field.selectionEnd) return null; // a selection, not a tap
+  for (const m of field.value.matchAll(TAG_RE)) {
+    const start = m.index + m[1].length; // where the # is
+    const end = start + 1 + m[2].length;
+    if (pos >= start && pos <= end) {
+      const tag = m[2].replace(/[-_]+$/, '').toLowerCase();
+      return /\p{L}/u.test(tag) ? tag : null;
+    }
+  }
+  return null;
+}
+
+function showTagHint(tag) {
+  tagHintEl.dataset.tag = tag;
+  tagHintEl.querySelector('.tag-hint-label').textContent = `Show #${tag} notes`;
+  tagHintEl.hidden = false;
+  editorEl.toggleAttribute('data-tag-hint', true);
+}
+
+function hideTagHint() {
+  tagHintEl.hidden = true;
+  editorEl.toggleAttribute('data-tag-hint', false);
+}
+
+for (const field of [titleEl, bodyEl]) {
+  const check = () => {
+    const tag = tagAtCaret(field);
+    if (tag) showTagHint(tag); else hideTagHint();
+  };
+  field.addEventListener('click', check); // a tap or click places the caret
+  field.addEventListener('keyup', (e) => { // moving the caret with the arrow keys
+    if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') check();
+  });
+  field.addEventListener('input', hideTagHint); // typing: get out of the way
+}
+tagHintEl.addEventListener('click', () => filterByTagFromNote(tagHintEl.dataset.tag));
 searchEl.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && searchEl.value) {
     e.stopPropagation();
