@@ -24,7 +24,7 @@
       <button id="expand-list" class="rail-btn rail-expand" type="button" aria-label="Show notes list" title="Show notes list (Ctrl+\)">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M13 9l3 3-3 3"/></svg>
       </button>
-      <button id="rail-new" class="rail-btn rail-new" type="button" aria-label="New note" title="New note">
+      <button id="rail-new" class="rail-btn rail-new" type="button" aria-label="New note" title="New note (Ctrl+Alt+N)">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
       </button>
       <button id="rail-search" class="rail-btn" type="button" aria-label="Search notes" title="Search notes (Ctrl+K)">
@@ -55,6 +55,12 @@
         <p id="today-sub" class="today-sub"></p>
       </div>
 
+      <button id="notebook-btn" class="notebook-btn" type="button" aria-haspopup="menu" aria-expanded="false">
+        <svg class="nb-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM8 3v18"/></svg>
+        <span id="notebook-name" class="notebook-name">All notes</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+
       <label class="search">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input id="search" type="search" placeholder="Search notes" aria-label="Search notes">
@@ -62,10 +68,20 @@
 
       <div id="tag-filter" class="tag-filter" role="group" aria-label="Filter by tag" hidden></div>
 
+      <div id="backup-nudge" class="nudge" role="status" hidden>
+        <span id="backup-nudge-text"></span>
+        <span class="nudge-actions">
+          <button id="nudge-backup" class="nudge-btn primary" type="button">Back up now</button>
+          <button id="nudge-later" class="nudge-btn" type="button">Later</button>
+        </span>
+      </div>
+
       <div class="list-meta">
         <span id="count"></span>
-        <label class="sort">Sort
-          <select id="sort">
+        <label class="sort" title="Sort notes">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/></svg>
+          <span id="sort-label" class="sort-label"></span>
+          <select id="sort" aria-label="Sort notes">
             <option value="updated">Last edited</option>
             <option value="created">Date created</option>
             <option value="title">Title A–Z</option>
@@ -73,13 +89,14 @@
         </label>
       </div>
 
-      <ul id="note-list" class="note-list"></ul>
+      <ul id="note-list" class="note-list" aria-label="Notes"></ul>
 
       <details id="backup" class="backup">
-        <summary>Backup</summary>
+        <summary>More</summary>
         <div class="backup-menu">
-          <button id="export" type="button">Export notes</button>
-          <button id="import" type="button">Import notes…</button>
+          <button id="export" type="button">Back up notes (export)</button>
+          <button id="import" type="button">Restore from backup…</button>
+          <button id="show-help" type="button">Keyboard shortcuts</button>
           <p id="app-version" class="app-version"></p>
         </div>
       </details>
@@ -97,20 +114,22 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
             Notes
           </button>
-          <button id="fmt-toggle" class="fmt-toggle" type="button" aria-expanded="false" aria-controls="tray" aria-label="Color, page and insert" title="Color, page style, lists, image">
+          <button id="fmt-toggle" class="fmt-toggle" type="button" aria-expanded="false" aria-controls="tray" aria-label="Tools: color, page, notebook, checklist, lists, image" title="Color, page, notebook, checklist, lists, image">
             <span class="fmt-aa" aria-hidden="true">Aa</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
           </button>
+          <span id="trash-label" class="trash-label">In Trash</span>
           <span id="meta" class="meta" aria-live="polite"></span>
           <button id="tag-hint" class="tag-hint" type="button" hidden>
             <span class="tag-hint-label"></span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </button>
+          <button id="restore" class="restore-btn" type="button">Restore</button>
           <button id="pin" class="icon-btn pin-btn" type="button" aria-pressed="false">
             <svg width="20" height="20" viewBox="0 0 24 24" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l-1 6 3 3H7l3-3-1-6zM12 15v6"/></svg>
             <span class="pin-label visually-hidden">Pin</span>
           </button>
-          <button id="delete" class="icon-btn" type="button" aria-label="Delete note" title="Delete note">
+          <button id="delete" class="icon-btn" type="button" aria-label="Move to Trash" title="Move to Trash">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>
           </button>
         </div>
@@ -118,14 +137,14 @@
         <div class="page">
           <p id="note-date" class="note-date-line"></p>
           <input id="title" class="title" type="text" placeholder="Title" aria-label="Title" spellcheck="true" autocapitalize="sentences">
-          <textarea id="body" class="body" placeholder="Start writing…" aria-label="Note" spellcheck="true" autocapitalize="sentences"></textarea>
-          <ul id="checklist" class="checklist" aria-label="Checklist" hidden></ul>
+          <div id="blocks" class="blocks"></div>
           <section id="note-images" class="note-images" aria-label="Images in this note" hidden>
             <span id="note-images-count" class="note-images-count"></span>
             <div id="note-images-row" class="note-images-row"></div>
           </section>
           <div id="note-tags" class="note-tags" hidden></div>
         </div>
+        <div id="tag-suggest" class="tag-suggest" role="group" aria-label="Tag suggestions" hidden></div>
         <div class="empty">
           <p class="empty-title">No note open</p>
           <p class="empty-hint">Pick a note from the list, or start a new one.</p>
@@ -134,8 +153,8 @@
     </main>
   </div>
 
-  <!-- The Aa tray: note color, page style, and things to insert. -->
-  <div id="tray" class="tray" role="dialog" aria-label="Color, page and insert" hidden>
+  <!-- The Aa tray: note color, page style, notebook, and things to insert. -->
+  <div id="tray" class="tray" role="dialog" aria-label="Tools" hidden>
     <div class="tray-section">
       <span class="tray-label">Color</span>
       <div id="swatches" class="swatches" role="group" aria-label="Note color"></div>
@@ -150,13 +169,21 @@
       </div>
     </div>
     <div class="tray-section">
+      <label class="tray-label" for="note-notebook">Notebook</label>
+      <select id="note-notebook" class="tray-select"></select>
+    </div>
+    <div class="tray-section">
       <span class="tray-label">Insert</span>
       <div class="tray-insert">
-        <button id="list-numbered" class="tray-btn text-only" type="button" title="Numbered list (or type 1. and a space)">
+        <button id="add-checklist" class="tray-btn" type="button" title="Turn this line into a checklist">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="6" height="6" rx="1.5"/><path d="m4.5 7 1 1 2-2M13 7h8"/><rect x="3" y="14" width="6" height="6" rx="1.5"/><path d="M13 17h8"/></svg>
+          Checklist
+        </button>
+        <button id="list-numbered" class="tray-btn" type="button" title="Numbered list (or type 1. and a space)">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h11M10 12h11M10 18h11M4 4.5l1.5-1V9M3.5 9H6M3.5 14.2c.4-.7 2.6-1 2.6.6 0 1-2.6 2-2.6 3.2H6.2"/></svg>
           Numbered
         </button>
-        <button id="list-bullet" class="tray-btn text-only" type="button" title="Bulleted list (or type - and a space)">
+        <button id="list-bullet" class="tray-btn" type="button" title="Bulleted list (or type - and a space)">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M10 6h11M10 12h11M10 18h11"/><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg>
           Bullets
         </button>
@@ -171,11 +198,14 @@
 
   <!-- Phones: writing tools that sit just above the keyboard while you type. -->
   <div id="kb-tools" class="kb-tools" role="toolbar" aria-label="Writing tools" hidden>
-    <button id="kb-tray" class="kb-btn" type="button" aria-label="Color and page style"><span class="kb-color" aria-hidden="true"></span></button>
-    <button id="kb-numbered" class="kb-btn text-only" type="button" aria-label="Numbered list">
+    <button id="kb-tray" class="kb-btn" type="button" aria-label="Color, page and notebook"><span class="kb-color" aria-hidden="true"></span></button>
+    <button id="kb-checklist" class="kb-btn" type="button" aria-label="Checklist">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="6" height="6" rx="1.5"/><path d="m4.5 7 1 1 2-2M13 7h8"/><rect x="3" y="14" width="6" height="6" rx="1.5"/><path d="M13 17h8"/></svg>
+    </button>
+    <button id="kb-numbered" class="kb-btn" type="button" aria-label="Numbered list">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h11M10 12h11M10 18h11M4 4.5l1.5-1V9M3.5 9H6M3.5 14.2c.4-.7 2.6-1 2.6.6 0 1-2.6 2-2.6 3.2H6.2"/></svg>
     </button>
-    <button id="kb-bullet" class="kb-btn text-only" type="button" aria-label="Bulleted list">
+    <button id="kb-bullet" class="kb-btn" type="button" aria-label="Bulleted list">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M10 6h11M10 12h11M10 18h11"/><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg>
     </button>
     <button id="kb-image" class="kb-btn" type="button" aria-label="Add image">
@@ -186,6 +216,9 @@
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="11" rx="2"/><path d="M7 8h.01M11 8h.01M15 8h.01M8 12h8M9 19l3 2 3-2"/></svg>
     </button>
   </div>
+
+  <!-- Notebook picker -->
+  <div id="nb-menu" class="nb-menu" role="menu" aria-label="Notebooks" hidden></div>
 
   <div id="viewer" class="viewer" role="dialog" aria-modal="true" aria-label="Image, full size" hidden>
     <div class="viewer-bar">
@@ -207,17 +240,38 @@
     </button>
   </div>
 
-  <div id="menu-scrim" class="menu-scrim" hidden></div>
-  <div id="new-menu" class="new-menu" role="menu" aria-label="New note type" hidden>
-    <button class="new-menu-item" type="button" role="menuitem" data-kind="text">
-      <span class="new-menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
-      <span class="new-menu-text"><strong>Text</strong><span class="new-menu-sub">Write freely</span></span>
-    </button>
-    <button class="new-menu-item" type="button" role="menuitem" data-kind="checklist">
-      <span class="new-menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg></span>
-      <span class="new-menu-text"><strong>Checklist</strong><span class="new-menu-sub">Tick things off</span></span>
-    </button>
-  </div>
+  <!-- Small dialogs: name a notebook, confirm something -->
+  <dialog id="ask" class="dialog" aria-labelledby="ask-title">
+    <form method="dialog" class="dialog-form">
+      <h2 id="ask-title" class="dialog-title"></h2>
+      <p id="ask-message" class="dialog-message"></p>
+      <input id="ask-input" class="dialog-input" type="text" maxlength="60" autocomplete="off">
+      <div class="dialog-actions">
+        <button value="cancel" class="dialog-btn" type="submit" formnovalidate>Cancel</button>
+        <button id="ask-ok" value="ok" class="dialog-btn primary" type="submit">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="help" class="dialog" aria-labelledby="help-title">
+    <form method="dialog" class="dialog-form">
+      <h2 id="help-title" class="dialog-title">Keyboard shortcuts</h2>
+      <dl class="shortcuts">
+        <dt><kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>N</kbd></dt><dd>New note</dd>
+        <dt><kbd>Ctrl</kbd> <kbd>K</kbd></dt><dd>Search</dd>
+        <dt><kbd>Ctrl</kbd> <kbd>\</kbd></dt><dd>Hide or show the list</dd>
+        <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Move through the list, <kbd>Enter</kbd> opens</dd>
+        <dt><kbd>Tab</kbd></dt><dd>Indent a list line, or accept a #tag suggestion</dd>
+        <dt><kbd>Shift</kbd> <kbd>Enter</kbd></dt><dd>Plain line break inside a list</dd>
+        <dt><kbd>Alt</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Move a checklist item</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Close menus and trays</dd>
+        <dt><kbd>?</kbd></dt><dd>This list</dd>
+      </dl>
+      <div class="dialog-actions">
+        <button value="close" class="dialog-btn primary" type="submit">Close</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="toast" class="toast" role="status" hidden>
     <span id="toast-msg">Note deleted</span>
