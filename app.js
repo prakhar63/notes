@@ -177,6 +177,7 @@ function renderEditor() {
   if (!note) return;
   editorEl.style.setProperty('--c', colorVar(note.color));
   editorEl.style.setProperty('--note-c', colorVar(note.color));
+  editorEl.dataset.color = note.color;
   titleEl.value = note.title;
   bodyEl.value = note.body;
   renderMeta(note);

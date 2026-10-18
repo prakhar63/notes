@@ -21,7 +21,7 @@
   --coral-ink: #2b2621;   /* dark text: white on coral is too faint to read */
 
   /* Note palette */
-  --c-paper: #ffffff;
+  --c-paper: #eae6de;     /* default note: Warm Ivory */
   --c-cornflower: #94b6ef;
   --c-chartreuse: #e6e279;
   --c-peach: #f6b48f;
@@ -269,6 +269,8 @@ button { cursor: pointer; }
   box-shadow: 0 1px 2px rgb(43 38 33 / 0.06), 0 8px 24px rgb(43 38 33 / 0.06);
   transition: background-color 0.2s;
 }
+/* Default (Paper) notes, and the empty editor, use Warm Ivory as-is rather than a tint. */
+.editor:not([data-color]), .editor[data-color="paper"] { background: var(--c-paper); }
 
 .editor-bar {
   display: flex;
