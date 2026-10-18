@@ -4,7 +4,7 @@ import {
 } from './store.js';
 import { listEnter, listIndent, toggleList } from './lists.js';
 import {
-  prepareImage, addImage, getImage, cleanUpImages, blobToDataURL, dataURLToBlob,
+  prepareImage, addImage, getImage, allImageIds, cleanUpImages, blobToDataURL, dataURLToBlob,
 } from './images.js';
 import {
   uid, textBlock, checklistBlock, newItem, allItems, contentText, blockIsEmpty,
@@ -1853,37 +1853,110 @@ function applySyncState(remote) {
   return result.stats;
 }
 
+// Pictures: after merging, each device asks for the pictures its notes now use but it
+// doesn't have, and the other sends them one at a time.
+async function missingImageIds() {
+  const have = new Set(await allImageIds().catch(() => []));
+  return [...new Set(notes.flatMap(imagesOf))].filter((id) => !have.has(id));
+}
+
+async function sendImages(session, ids) {
+  session.sending = { sent: 0, delivered: 0, total: ids.length };
+  for (const id of ids) {
+    if (syncSession !== session) return;
+    const rec = await getImage(id).catch(() => null);
+    const data = rec ? await blobToDataURL(rec.blob).catch(() => null) : null;
+    session.channel.send({ type: 'image', id, data, width: rec?.width, height: rec?.height });
+    session.sending.sent += 1;
+    if (data) session.sending.delivered += 1;
+    showImageProgress(session);
+    await new Promise((r) => setTimeout(r, 0)); // let the screen update between pictures
+  }
+}
+
+async function receiveImage(session, msg) {
+  if (!session.want?.includes(msg.id) || session.got.has(msg.id)) return;
+  session.got.add(msg.id);
+  if (typeof msg.data === 'string' && msg.data.startsWith('data:image/')) {
+    try {
+      await addImage({ blob: await dataURLToBlob(msg.data), width: msg.width, height: msg.height }, msg.id);
+      imageUrls.delete(msg.id); // forget an earlier "Image unavailable"
+      session.stats.pictures += 1;
+    } catch {
+      session.stats.picturesFailed += 1; // storage full
+    }
+  } // else the other device doesn't have it either: nothing to fetch, now or later
+  showImageProgress(session);
+  if (session.got.size >= session.want.length) imagesArrived(session);
+}
+
+function imagesArrived(session) {
+  session.imagesDone = true;
+  session.channel.send({ type: 'have-all' });
+  if (session.stats.pictures) { renderList(); renderEditor(); }
+}
+
+function showImageProgress(session) {
+  const got = session.got?.size ?? 0;
+  const want = session.want?.length ?? 0;
+  const { sent = 0, total = 0 } = session.sending ?? {};
+  if (!want && !total) return;
+  const parts = [];
+  if (want) parts.push(`Receiving pictures · ${got} of ${want}`);
+  if (total) parts.push(`Sending pictures · ${sent} of ${total}`);
+  showSyncProgress(parts.join('  ·  '), 85 + Math.round((14 * (got + sent)) / (want + total)));
+}
+
 function finishSyncIfDone(session) {
-  if (!session.stats || !session.peerApplied) return;
+  if (!session.stats || !session.peerApplied || !session.imagesDone || !session.peerHasAll) return;
   showSyncDone(session);
   if (session.role === 'join') endSyncSession(); // the computer sees the link close after "done"
 }
 
+async function handleSyncMessage(session, msg) {
+  const { channel } = session;
+  if (msg.type === 'start' && session.role === 'host') {
+    sendSyncState(session);
+  } else if (msg.type === 'state' && !session.stats) {
+    showSyncProgress('Merging…', 85);
+    sendSyncState(session); // in case the start message was missed
+    session.stats = { ...applySyncState(msg.state), pictures: 0, picturesFailed: 0, picturesMissing: 0 };
+    session.want = await missingImageIds();
+    session.got = new Set();
+    channel.send({ type: 'applied', want: session.want });
+    if (!session.want.length) imagesArrived(session);
+    finishSyncIfDone(session);
+  } else if (msg.type === 'applied') {
+    session.peerApplied = true;
+    // Sent alongside: pictures coming the other way keep arriving meanwhile.
+    sendImages(session, Array.isArray(msg.want) ? msg.want.filter((id) => typeof id === 'string') : []);
+    finishSyncIfDone(session);
+  } else if (msg.type === 'image' && session.stats) {
+    await receiveImage(session, msg);
+    finishSyncIfDone(session);
+  } else if (msg.type === 'have-all') {
+    session.peerHasAll = true;
+    finishSyncIfDone(session);
+  }
+}
+
 function listenToChannel(session) {
   const { channel } = session;
+  // One message at a time, in order (handling a picture takes a moment).
+  let queue = Promise.resolve();
   channel.onMessage((msg) => {
-    if (syncSession !== session) return;
-    if (msg.type === 'start' && session.role === 'host') {
-      sendSyncState(session);
-    } else if (msg.type === 'state' && !session.stats) {
-      showSyncProgress('Merging…', 85);
-      sendSyncState(session); // in case the start message was missed
-      session.stats = applySyncState(msg.state);
-      channel.send({ type: 'applied' });
-      finishSyncIfDone(session);
-    } else if (msg.type === 'applied') {
-      session.peerApplied = true;
-      finishSyncIfDone(session);
-    }
+    queue = queue.then(() => (syncSession === session ? handleSyncMessage(session, msg) : null)).catch(() => {});
   });
   channel.onProgress((type, got, total) => {
     if (syncSession === session && type === 'state') showSyncProgress('Receiving notes…', 20 + Math.round((60 * got) / total));
   });
   channel.onClose(() => {
     if (syncSession !== session || syncEl.dataset.step === 'done') return;
-    // Closed after we merged but before hearing back: our side is synced all the same.
-    if (session.stats) showSyncDone(session);
-    else showSyncFailure({ reason: 'refused' });
+    // Closed after we merged: the notes are synced; say if pictures didn't all arrive.
+    if (session.stats) {
+      if (!session.imagesDone) session.stats.picturesMissing += (session.want?.length ?? 0) - (session.got?.size ?? 0);
+      showSyncDone(session);
+    } else showSyncFailure({ reason: 'refused' });
   });
 }
 
@@ -1898,37 +1971,46 @@ function showSyncDone(session) {
   const { stats } = session;
   const otherName = session.channel.info.device ?? otherKind(deviceKind());
   const yours = otherName === deviceKind() ? `the other ${otherName}` : `your ${otherName}`; // two computers, or two phones
-  const nothing = !stats.added && !stats.updated && !stats.removed && !stats.sent;
+  const picturesSent = session.sending?.delivered ?? 0;
+  const nothing = !stats.added && !stats.updated && !stats.removed && !stats.sent && !stats.pictures && !picturesSent;
   $('#sync-done-title').textContent = nothing ? 'Already in sync' : 'Synced';
   $('#sync-done-text').textContent = nothing
     ? `This ${deviceKind()} and ${yours} already had the same notes.`
     : `This ${deviceKind()} and ${yours} now have the same notes.`;
   const row = (label, value) => {
     const li = el('li');
-    li.append(el('span', '', label), el('strong', '', countLabel(value)));
+    li.append(el('span', '', label), el('strong', '', value));
     return li;
   };
+  const pictures = (n) => `${n} ${n === 1 ? 'picture' : 'pictures'}`;
   const rows = [
-    [`New from ${yours}`, stats.added],
-    [`Updated from ${yours}`, stats.updated],
-    [`Sent to ${yours}`, stats.sent],
-    ['Moved to Trash or deleted', stats.removed],
-  ].filter(([, n]) => n).map(([label, n]) => row(label, n));
+    [`New from ${yours}`, stats.added, countLabel],
+    [`Updated from ${yours}`, stats.updated, countLabel],
+    [`Sent to ${yours}`, stats.sent, countLabel],
+    ['Moved to Trash or deleted', stats.removed, countLabel],
+    [`Pictures from ${yours}`, stats.pictures, pictures],
+    [`Pictures sent to ${yours}`, picturesSent, pictures],
+  ].filter(([, n]) => n).map(([label, n, unit]) => row(label, unit(n)));
   $('#sync-stats').replaceChildren(...rows);
   $('#sync-stats').hidden = !rows.length;
 
-  // Notes edited on both devices since they last synced: say which copy was kept.
-  const noteEl = $('#sync-note');
+  // Things worth knowing: notes edited on both devices since they last synced (which copy
+  // was kept), and pictures that couldn't come across.
+  const notices = [];
   const { conflicts } = stats;
-  noteEl.hidden = !conflicts.length;
   if (conflicts.length === 1) {
     const [c] = conflicts;
     const n = notes.find((x) => x.id === c.id);
     const time = new Date(c.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    noteEl.textContent = `“${n ? displayTitle(n) : c.title || 'A note'}” was changed on both. The newer copy (from ${c.keptMine ? `this ${deviceKind()}` : yours}, ${time}) was kept.`;
+    notices.push(`“${n ? displayTitle(n) : c.title || 'A note'}” was changed on both. The newer copy (from ${c.keptMine ? `this ${deviceKind()}` : yours}, ${time}) was kept.`);
   } else if (conflicts.length) {
-    noteEl.textContent = `${conflicts.length} notes were changed on both. The newer copy of each was kept.`;
+    notices.push(`${conflicts.length} notes were changed on both. The newer copy of each was kept.`);
   }
+  if (stats.picturesFailed) notices.push(`${pictures(stats.picturesFailed)} couldn’t be saved: this device’s storage may be full.`);
+  if (stats.picturesMissing) notices.push(`${pictures(stats.picturesMissing)} didn’t arrive. Sync again to fetch them.`);
+  const noteEl = $('#sync-note');
+  noteEl.textContent = notices.join(' ');
+  noteEl.hidden = !notices.length;
   setSyncStep('done');
 }
 
