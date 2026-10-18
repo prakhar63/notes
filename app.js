@@ -41,6 +41,8 @@ const bodyEl = $('#body');
 const metaEl = $('#meta');
 const searchEl = $('#search');
 const sortEl = $('#sort');
+const tagFilterEl = $('#tag-filter');
+const noteTagsEl = $('#note-tags');
 
 const colorVar = (color) => `var(--c-${color})`;
 
@@ -62,15 +64,33 @@ sortEl.value = sortBy;
 
 const sortNotes = (list) => [...list].sort(SORTS[sortBy]);
 
-// Every word typed must appear somewhere in the title or body.
+// ---------- #hashtags ----------
+
+// A tag is # followed by letters, digits, - or _, at the start of a line or after a space
+// (so "page#2" or a URL's "#section" isn't a tag). It needs at least one letter: "#1" isn't one.
+const TAG_RE = /(^|\s)#([\p{L}\p{N}_-]+)/gu;
+let activeTag = null; // lowercase tag the list is filtered by, or null
+
+function tagsOf(note) {
+  const tags = new Set();
+  for (const m of `${note.title}\n${note.body}`.matchAll(TAG_RE)) {
+    const tag = m[2].replace(/[-_]+$/, '').toLowerCase();
+    if (/\p{L}/u.test(tag)) tags.add(tag);
+  }
+  return [...tags];
+}
+
+// Every word typed must appear somewhere in the title or body, and the note must carry the active tag.
 function visibleNotes() {
   const words = searchEl.value.toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = words.length
-    ? notes.filter((n) => {
+  let matches = notes;
+  if (activeTag) matches = matches.filter((n) => tagsOf(n).includes(activeTag));
+  if (words.length) {
+    matches = matches.filter((n) => {
       const text = `${n.title}\n${n.body}`.toLowerCase();
       return words.every((w) => text.includes(w));
-    })
-    : notes;
+    });
+  }
   return sortNotes(matches);
 }
 
@@ -110,13 +130,40 @@ function el(tag, className, text) {
   return node;
 }
 
+// The chip row above the list: every tag in use, most-used first.
+function renderTagFilter() {
+  const counts = new Map();
+  for (const note of notes) for (const tag of tagsOf(note)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  if (activeTag && !counts.has(activeTag)) activeTag = null; // its last note lost the tag
+
+  const tags = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  tagFilterEl.hidden = !tags.length;
+  tagFilterEl.replaceChildren(...tags.map(([tag, count]) => {
+    const chip = el('button', 'tag-chip', `#${tag}`);
+    chip.type = 'button';
+    chip.dataset.tag = tag;
+    chip.setAttribute('aria-pressed', String(tag === activeTag));
+    chip.append(el('span', 'tag-count', ` ${count}`));
+    return chip;
+  }));
+}
+
+function setActiveTag(tag) {
+  activeTag = tag === activeTag ? null : tag;
+  renderList();
+}
+
 function renderList() {
+  renderTagFilter();
   const shown = visibleNotes();
   const total = `${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`;
-  countEl.textContent = shown.length === notes.length ? total : `${shown.length} of ${total}`;
+  countEl.textContent = (shown.length === notes.length ? total : `${shown.length} of ${total}`)
+    + (activeTag ? ` · #${activeTag}` : '');
 
   if (!shown.length) {
-    const msg = notes.length ? 'No notes match your search.' : 'No notes yet. Start one with New note.';
+    const msg = notes.length
+      ? (activeTag && !searchEl.value.trim() ? `No notes tagged #${activeTag}.` : 'No notes match your search.')
+      : 'No notes yet. Start one with New note.';
     listEl.replaceChildren(el('li', 'list-empty', msg));
     return;
   }
@@ -226,6 +273,19 @@ function renderMeta(note) {
   else metaEl.textContent = `Saved · edited ${relativeTime(note.updatedAt)}`;
 }
 
+// "Tags in this note:" under the text; each chip filters the list by that tag.
+function renderNoteTags(note) {
+  const tags = tagsOf(note);
+  noteTagsEl.hidden = !tags.length;
+  noteTagsEl.replaceChildren(el('span', 'note-tags-label', 'Tags in this note:'), ...tags.map((tag) => {
+    const chip = el('button', 'note-tag', `#${tag}`);
+    chip.type = 'button';
+    chip.dataset.tag = tag;
+    chip.title = `Show all notes tagged #${tag}`;
+    return chip;
+  }));
+}
+
 function renderEditor() {
   const note = activeNote();
   editorEl.toggleAttribute('data-empty', !note);
@@ -236,6 +296,7 @@ function renderEditor() {
   titleEl.value = note.title;
   bodyEl.value = note.body;
   renderMeta(note);
+  renderNoteTags(note);
   pinBtn.setAttribute('aria-pressed', String(isPinned(note)));
   pinBtn.querySelector('.pin-label').textContent = isPinned(note) ? 'Pinned' : 'Pin';
   pinBtn.title = isPinned(note) ? 'Unpin this note' : `Pin to the top (up to ${MAX_PINS})`;
@@ -289,6 +350,7 @@ function newNote() {
   const note = { id: crypto.randomUUID(), title: '', body: '', color: 'paper', createdAt: t, updatedAt: t };
   notes.push(note);
   searchEl.value = ''; // so the new note shows up in the list
+  activeTag = null;
   openNote(note.id);
   bodyEl.focus();
 }
@@ -308,6 +370,7 @@ function updateActive(field, value) {
   note.updatedAt = Date.now();
   scheduleSave();
   renderMeta(note);
+  renderNoteTags(note);
   renderList();
 }
 
@@ -473,6 +536,21 @@ pinBtn.addEventListener('click', togglePin);
 $('#undo').addEventListener('click', undoDelete);
 
 searchEl.addEventListener('input', renderList);
+
+tagFilterEl.addEventListener('click', (e) => {
+  const chip = e.target.closest('.tag-chip');
+  if (chip) setActiveTag(chip.dataset.tag);
+});
+
+// A tag inside the note: filter the list by it (and on phones, go to the list to see it).
+noteTagsEl.addEventListener('click', (e) => {
+  const chip = e.target.closest('.note-tag');
+  if (!chip) return;
+  activeTag = null; // always turn this tag on, never toggle it off
+  setActiveTag(chip.dataset.tag);
+  setListCollapsed(false);
+  if (document.body.dataset.view === 'editor' && phoneLayout.matches) leaveEditorView();
+});
 searchEl.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && searchEl.value) {
     e.stopPropagation();

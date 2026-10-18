@@ -231,6 +231,59 @@ body[data-list="collapsed"] .page { max-width: 760px; }
 .note-date { font-size: 12px; color: var(--tile-muted); }
 .note-pin { display: grid; fill: var(--coral); }
 
+/* ---------- #hashtags ---------- */
+
+/* Chip row above the list: one scrolling line, so many tags never push the list down. */
+.tag-filter {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -4px;
+  padding: 2px 4px;
+}
+.tag-filter::-webkit-scrollbar { display: none; }
+.tag-chip {
+  flex: none;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #d8d2c7;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tag-chip:hover { border-color: var(--muted); }
+.tag-chip[aria-pressed="true"] { border-color: var(--coral); background: var(--coral); color: var(--coral-ink); }
+.tag-count { font-weight: 400; opacity: 0.7; }
+
+/* "Tags in this note:" under the text */
+.note-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0 4px;
+  border-top: 1px solid rgb(43 38 33 / 0.12);
+  font-family: var(--font-ui);
+}
+.note-tags-label { font-size: 13px; color: var(--muted); }
+.note-tag {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--tile);
+  color: var(--tile-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.note-tag:hover { background: var(--tile-hover); }
+
+.tag-filter[hidden], .note-tags[hidden] { display: none; }
+
 /* "Pinned · 2 of 5" / "Notes" headings in the list */
 .list-section {
   display: flex;
