@@ -74,7 +74,7 @@ Six colors a note can wear: `paper #ffffff`, `cornflower #94b6ef`, `chartreuse #
 
 Two families, loaded from Google Fonts (`index.html`), with system fallbacks:
 
-- **Literata** (`--font-write`): anything you *write* or that names a place: note titles and text, dialog titles, the notebook picker.
+- **Literata** (`--font-write`): anything you *write* or that names a place: note titles and text, dialog titles, the view title in the header, the menu wordmark.
 - **DM Sans** (`--font-ui`): everything else: buttons, lists, labels, meta.
 
 | Style | Font | Size / line | Weight | Where |
@@ -106,7 +106,7 @@ Only weights 400 and 600 are loaded; don't use others.
 
 - **Desktop (≥ 720px):** list (320px) beside the page. The list can collapse to a rail (`Ctrl+\`).
 - **Phone (< 720px):** one screen at a time, switched by `body[data-view]` (`list` / `editor`), with the back gesture working through history. The app is pinned to the window (`position: fixed; inset: 0`) so nothing hides behind Android's navigation bar.
-- **Sidebar order:** header (notebook picker, theme, collapse, +) → search → date line (`**Sunday**, 18 October · 2 notes today`) → tag chips → backup nudge → count + sort → list → More.
+- **Sidebar order:** header (☰, view title, ⋯ in a notebook, collapse, +) → date line (`**Sunday**, 18 October · 2 notes today`) → tag chips → backup nudge → count + sort → list. Search, notebooks, Trash, the theme toggle and More live in the ☰ menu.
 - Safe areas: use `env(safe-area-inset-*)` for anything at the screen edge (`viewport-fit=cover`).
 
 ---
@@ -125,7 +125,9 @@ Only weights 400 and 600 are loaded; don't use others.
 
 **Search:** 44px, `--surface` with a `--line` border, 12px radius, search icon. Matches are highlighted with `--highlight`.
 
-**Notebook picker:** the header title. Bordered button, notebook icon + Literata name + chevron; opens a menu of notebooks, Trash, New/Rename/Delete.
+**Header title:** the current view (All notes, a notebook, Trash) in Literata 22px (24px on phones). In a notebook, ⋯ beside it opens Rename / Delete.
+
+**☰ menu (drawer):** slides in from the left over a dimmed app (340px, max 88% of the screen), the app behind is inert. Top: close, wordmark, theme toggle. Then search (results replace the tree while typing: title + snippet with matches marked, notebook name), All notes, Notebooks (each with a ▸ to show its notes, + New), Trash, and More at the bottom (sync, back up, restore, shortcuts, version). Rows are 40px (44px on phones); the current view is filled `--highlight`. Esc or the phone back gesture closes it.
 
 **Chips** (tags): pill, `--surface` with a `--line` border, 13px, 600; hover outlines `--accent`; the active chip is filled `--highlight`.
 

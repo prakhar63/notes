@@ -181,18 +181,20 @@ function inView(note) {
 }
 const viewNotes = () => notes.filter(inView);
 
-// Every word typed must appear somewhere in the note, and the note must carry the active tag.
+// The notes in this view, carrying the active tag if one is picked.
 function visibleNotes() {
-  const words = searchWords();
   let matches = viewNotes();
   if (activeTag) matches = matches.filter((n) => tagsOf(n).includes(activeTag));
-  if (words.length) {
-    matches = matches.filter((n) => {
-      const text = noteText(n).toLowerCase();
-      return words.every((w) => text.includes(w));
-    });
-  }
   return sortNotes(matches);
+}
+
+// Search (in the ☰ menu) looks through every note outside Trash: each word typed must appear.
+function searchResults(words) {
+  if (!words.length) return [];
+  return notes.filter((n) => !isDeleted(n) && !isBlank(n)).filter((n) => {
+    const text = noteText(n).toLowerCase();
+    return words.every((w) => text.includes(w));
+  }).sort(SORTS.updated);
 }
 
 // ---------- Dates ----------
@@ -291,7 +293,10 @@ function previewFor(note, words) {
   const full = contentPieces(note).join('  ');
   const i = full.toLowerCase().indexOf(words[0]);
   if (i === -1) return base;
-  return (i > 24 ? '…' : '') + full.slice(Math.max(0, i - 24));
+  if (i <= 24) return full;
+  // Start a little before the match, at the beginning of a word.
+  const space = full.indexOf(' ', i - 24);
+  return `…${full.slice(space !== -1 && space < i ? space + 1 : i - 24)}`;
 }
 
 function renderList() {
@@ -322,13 +327,13 @@ function renderList() {
   if (!shown.length) {
     let msg = 'No notes yet. Tap + to start one.';
     if (view === 'trash') msg = 'Trash is empty.';
-    else if (inThisView) msg = activeTag && !searchEl.value.trim() ? `No notes tagged #${activeTag}.` : 'No notes match your search.';
+    else if (inThisView) msg = `No notes tagged #${activeTag}.`;
     else if (view !== 'all') msg = 'No notes in this notebook yet. Tap + to add one.';
     listEl.replaceChildren(...parts, el('li', 'list-empty', msg));
     return;
   }
 
-  const words = searchWords();
+  const words = [];
   const dateOf = (note) => (view === 'trash' ? note.deletedAt : sortBy === 'created' ? note.createdAt : note.updatedAt);
 
   const item = (note) => {
@@ -1348,7 +1353,8 @@ listEl.addEventListener('click', (e) => { if (e.target.closest('#empty-trash')) 
 
 // ---------- Notebooks ----------
 
-const nbBtn = $('#notebook-btn');
+const nbBtn = $('#nb-options');
+const drawerEl = $('#drawer');
 const nbMenu = $('#nb-menu');
 
 function setView(next) {
@@ -1365,46 +1371,33 @@ function setView(next) {
 
 function renderNotebookButton() {
   const name = view === 'all' ? 'All notes' : view === 'trash' ? 'Trash' : notebookName(view);
-  $('#notebook-name').textContent = name;
-  nbBtn.dataset.view = view === 'trash' ? 'trash' : view === 'all' ? 'all' : 'notebook';
+  $('#view-title').textContent = name;
+  document.title = view === 'all' ? 'Notes' : `${name} · Notes`;
+  nbBtn.hidden = view === 'all' || view === 'trash';
+  if (!drawerEl.hidden) renderDrawer();
 }
 
 function saveBooks() { saveNotebooks(notebooks); }
 
+// ⋯ next to a notebook's name: rename or delete it.
 function openNotebookMenu() {
-  const live = notes.filter((n) => !isDeleted(n));
-  const count = (pred) => live.filter(pred).length;
-  const item = (label, sub, action, { current = false, kind = '' } = {}) => {
+  const item = (label, action, kind = '') => {
     const b = el('button', `nb-item ${kind}`);
     b.type = 'button';
-    b.setAttribute('role', 'menuitemradio');
-    b.setAttribute('aria-checked', String(current));
+    b.setAttribute('role', 'menuitem');
     b.dataset.action = action;
     b.append(el('span', 'nb-item-name', label));
-    if (sub !== null) b.append(el('span', 'nb-item-count', String(sub)));
     return b;
   };
-  const parts = [item('All notes', count(() => true), 'view:all', { current: view === 'all' })];
-  for (const nb of [...notebooks].sort((a, b) => a.name.localeCompare(b.name))) {
-    parts.push(item(nb.name, count((n) => n.notebookId === nb.id), `view:${nb.id}`, { current: view === nb.id, kind: 'nb-book' }));
-  }
-  parts.push(el('hr', 'nb-sep'));
-  parts.push(item('New notebook…', null, 'new', { kind: 'nb-action' }));
-  if (view !== 'all' && view !== 'trash') {
-    parts.push(item('Rename this notebook…', null, 'rename', { kind: 'nb-action' }));
-    parts.push(item('Delete this notebook…', null, 'delete', { kind: 'nb-action' }));
-  }
-  parts.push(el('hr', 'nb-sep'));
-  parts.push(item('Trash', notes.filter(isDeleted).length, 'view:trash', { current: view === 'trash', kind: 'nb-trash' }));
-  nbMenu.replaceChildren(...parts);
-
+  nbMenu.replaceChildren(item('Rename notebook…', 'rename', 'nb-action'), item('Delete notebook…', 'delete', 'nb-action'));
   nbMenu.hidden = false;
   nbBtn.setAttribute('aria-expanded', 'true');
   const r = nbBtn.getBoundingClientRect();
+  const width = 220;
   nbMenu.style.top = `${r.bottom + 6}px`;
-  nbMenu.style.left = `${r.left}px`;
-  nbMenu.style.width = `${Math.max(240, r.width)}px`;
-  nbMenu.querySelector('[aria-checked="true"]')?.focus();
+  nbMenu.style.left = `${Math.max(8, Math.min(r.right - width, innerWidth - width - 8))}px`;
+  nbMenu.style.width = `${width}px`;
+  nbMenu.querySelector('.nb-item')?.focus();
 }
 
 function closeNotebookMenu() {
@@ -1475,11 +1468,7 @@ nbMenu.addEventListener('click', (e) => {
   if (!b) return;
   closeNotebookMenu();
   const action = b.dataset.action;
-  if (action.startsWith('view:')) {
-    setView(action.slice(5));
-    if (phoneLayout.matches && document.body.dataset.view === 'editor') leaveEditorView();
-  } else if (action === 'new') createNotebook();
-  else if (action === 'rename') renameNotebook(view);
+  if (action === 'rename') renameNotebook(view);
   else if (action === 'delete') deleteNotebook(view);
 });
 nbMenu.addEventListener('keydown', (e) => {
@@ -1492,6 +1481,217 @@ nbMenu.addEventListener('keydown', (e) => {
 document.addEventListener('pointerdown', (e) => {
   if (nbMenu.hidden || nbMenu.contains(e.target) || nbBtn.contains(e.target)) return;
   closeNotebookMenu();
+});
+
+// ---------- ☰ menu: search, notebooks with their notes, More ----------
+
+const drawerScrim = $('#drawer-scrim');
+const menuBtn = $('#menu-btn');
+const drawerTree = $('#drawer-tree');
+const drawerResults = $('#drawer-results');
+const expandedBooks = new Set(); // notebooks showing their notes in the menu
+let drawerReturnFocus = null;
+
+const svg = (body, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+const DRAWER_ICONS = {
+  all: svg('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>'),
+  book: svg('<path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM8 3v18"/>'),
+  trash: svg('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>'),
+  twisty: svg('<path d="m9 6 6 6-6 6"/>', 14),
+  plus: svg('<path d="M12 5v14M5 12h14"/>', 14),
+};
+
+function openDrawer({ search = false } = {}) {
+  closeNotebookMenu();
+  if (view !== 'all' && view !== 'trash') expandedBooks.add(view);
+  if (drawerEl.hidden) {
+    drawerReturnFocus = document.activeElement;
+    drawerEl.hidden = false;
+    drawerScrim.hidden = false;
+    $('.app').inert = true; // the menu has the floor until it closes
+    menuBtn.setAttribute('aria-expanded', 'true');
+    // Phones: the back gesture closes the menu.
+    if (phoneLayout.matches) history.pushState({ ...history.state, drawer: true }, '');
+  }
+  renderDrawer();
+  renderDrawerResults();
+  if (search) {
+    searchEl.focus();
+    searchEl.select();
+  } else {
+    (drawerTree.querySelector('[aria-current="true"]') ?? $('#drawer-close')).focus();
+  }
+}
+
+// `navigating`: closing because something was picked, so don't step back in history
+// (that would undo the note or notebook that's about to open).
+function closeDrawer({ fromHistory = false, navigating = false } = {}) {
+  if (drawerEl.hidden) return;
+  if (history.state?.drawer) {
+    if (!fromHistory && !navigating) { history.back(); return; } // popstate comes back here
+    if (navigating) {
+      const { drawer, ...rest } = history.state;
+      history.replaceState(Object.keys(rest).length ? rest : null, '');
+    }
+  }
+  drawerEl.hidden = true;
+  drawerScrim.hidden = true;
+  $('.app').inert = false;
+  menuBtn.setAttribute('aria-expanded', 'false');
+  searchEl.value = '';
+  if (!navigating) (drawerReturnFocus?.isConnected && drawerReturnFocus !== document.body ? drawerReturnFocus : menuBtn).focus();
+}
+
+function renderDrawer() {
+  const live = notes.filter((n) => !isDeleted(n) && !isBlank(n));
+  const item = (label, count, target, icon) => {
+    const b = el('button', 'drawer-item');
+    b.type = 'button';
+    b.dataset.view = target;
+    if (view === target) b.setAttribute('aria-current', 'true');
+    b.insertAdjacentHTML('beforeend', icon);
+    b.append(el('span', 'drawer-name', label), el('span', 'drawer-count', String(count)));
+    return b;
+  };
+  const row = (...children) => {
+    const r = el('div', 'drawer-row');
+    r.append(...children);
+    return r;
+  };
+
+  const parts = [row(el('span', 'drawer-twisty-gap'), item('All notes', live.length, 'all', DRAWER_ICONS.all))];
+
+  const head = el('div', 'drawer-section');
+  const newBtn = el('button', 'drawer-new');
+  newBtn.type = 'button';
+  newBtn.insertAdjacentHTML('beforeend', DRAWER_ICONS.plus);
+  newBtn.append('New');
+  newBtn.setAttribute('aria-label', 'New notebook');
+  head.append(el('h2', 'drawer-label', 'Notebooks'), newBtn);
+  parts.push(head);
+
+  const books = [...notebooks].sort((a, b) => a.name.localeCompare(b.name));
+  if (!books.length) parts.push(el('p', 'drawer-empty', 'Group notes you want to keep together: tap New.'));
+  for (const nb of books) {
+    const inside = live.filter((n) => n.notebookId === nb.id).sort(SORTS[sortBy]);
+    const open = expandedBooks.has(nb.id);
+    const twisty = el('button', 'drawer-twisty');
+    twisty.type = 'button';
+    twisty.dataset.twisty = nb.id;
+    twisty.setAttribute('aria-expanded', String(open));
+    twisty.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} notes in ${nb.name}`);
+    twisty.insertAdjacentHTML('beforeend', DRAWER_ICONS.twisty);
+    parts.push(row(twisty, item(nb.name, inside.length, nb.id, DRAWER_ICONS.book)));
+    if (open) {
+      const list = el('ul', 'drawer-notes');
+      list.setAttribute('aria-label', `Notes in ${nb.name}`);
+      if (!inside.length) list.append(el('li', 'drawer-empty', 'No notes yet'));
+      for (const n of inside) {
+        const b = el('button', 'drawer-note');
+        b.type = 'button';
+        b.dataset.note = n.id;
+        b.dataset.book = nb.id;
+        if (n.id === activeId) b.setAttribute('aria-current', 'true');
+        const dot = el('span', 'drawer-dot');
+        dot.style.setProperty('--c', colorVar(n.color));
+        b.append(dot, el('span', 'drawer-name', displayTitle(n)));
+        const li = el('li');
+        li.append(b);
+        list.append(li);
+      }
+      parts.push(list);
+    }
+  }
+
+  const trash = row(el('span', 'drawer-twisty-gap'), item('Trash', notes.filter(isDeleted).length, 'trash', DRAWER_ICONS.trash));
+  trash.style.marginTop = '8px';
+  parts.push(trash);
+  drawerTree.replaceChildren(...parts);
+}
+
+function renderDrawerResults() {
+  const words = searchWords();
+  drawerTree.hidden = words.length > 0;
+  drawerResults.hidden = !words.length;
+  if (!words.length) { drawerResults.replaceChildren(); return; }
+  const found = searchResults(words);
+  if (!found.length) {
+    drawerResults.replaceChildren(el('p', 'drawer-empty', 'No notes match.'));
+    return;
+  }
+  const items = found.slice(0, 50).map((n) => {
+    const b = el('button', 'drawer-result');
+    b.type = 'button';
+    b.dataset.note = n.id;
+    const title = highlighted(el('span', 'drawer-result-title'), displayTitle(n), words);
+    const where = notebookName(n.notebookId);
+    if (where) title.append(' ', el('span', 'drawer-result-where', `· ${where}`));
+    b.append(title, highlighted(el('span', 'drawer-result-text'), previewFor(n, words), words));
+    return b;
+  });
+  drawerResults.replaceChildren(el('h2', 'drawer-label', `${found.length} ${found.length === 1 ? 'note' : 'notes'}`), ...items);
+}
+
+// Opens a note picked in the menu, switching to a view that has it.
+function openFromDrawer(id, { book = null, jumpTo = null } = {}) {
+  const note = notes.find((n) => n.id === id);
+  if (!note) return;
+  closeDrawer({ navigating: true });
+  if (!inView(note)) setView(book && note.notebookId === book ? book : 'all');
+  openNote(id, { jumpTo });
+}
+
+menuBtn.addEventListener('click', () => openDrawer());
+$('#drawer-close').addEventListener('click', () => closeDrawer());
+drawerScrim.addEventListener('click', () => closeDrawer());
+drawerEl.addEventListener('click', (e) => {
+  const twisty = e.target.closest('.drawer-twisty');
+  if (twisty) {
+    const id = twisty.dataset.twisty;
+    if (expandedBooks.has(id)) expandedBooks.delete(id); else expandedBooks.add(id);
+    renderDrawer();
+    drawerTree.querySelector(`[data-twisty="${CSS.escape(id)}"]`)?.focus();
+    return;
+  }
+  const target = e.target.closest('.drawer-item, .drawer-note, .drawer-result, .drawer-new');
+  if (!target) return;
+  if (target.matches('.drawer-new')) {
+    closeDrawer({ navigating: true });
+    createNotebook();
+  } else if (target.matches('.drawer-item')) {
+    closeDrawer({ navigating: true });
+    setView(target.dataset.view);
+    if (phoneLayout.matches && document.body.dataset.view === 'editor') leaveEditorView();
+  } else if (target.matches('.drawer-result')) {
+    openFromDrawer(target.dataset.note, { jumpTo: searchWords()[0] ?? null });
+  } else {
+    openFromDrawer(target.dataset.note, { book: target.dataset.book });
+  }
+});
+
+searchEl.addEventListener('input', renderDrawerResults);
+searchEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && searchEl.value) {
+    e.stopPropagation();
+    searchEl.value = '';
+    renderDrawerResults();
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    drawerEl.querySelector('.drawer-result, .drawer-item')?.focus();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    drawerResults.querySelector('.drawer-result')?.click();
+  }
+});
+// ↑/↓ move through the menu's buttons.
+drawerEl.addEventListener('keydown', (e) => {
+  if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || e.target === searchEl) return;
+  const items = [...drawerEl.querySelectorAll('.drawer-result, .drawer-item, .drawer-note')].filter((b) => b.offsetParent !== null);
+  const i = items.indexOf(document.activeElement);
+  if (i === -1) return;
+  e.preventDefault();
+  if (e.key === 'ArrowUp' && i === 0) { searchEl.focus(); return; }
+  items[Math.min(items.length - 1, Math.max(0, i + (e.key === 'ArrowDown' ? 1 : -1)))].focus();
 });
 
 // The tray's "Notebook" picker for the open note.
@@ -1554,12 +1754,11 @@ function ask({ title, message = '', input = null, placeholder = '', okLabel = 'O
 }
 
 const helpEl = $('#help');
-const openHelp = () => { backupEl.open = false; if (!helpEl.open) helpEl.showModal(); };
+const openHelp = () => { closeDrawer({ navigating: true }); if (!helpEl.open) helpEl.showModal(); };
 $('#show-help').addEventListener('click', openHelp);
 
 // ---------- Backup: export and import, and a gentle reminder ----------
 
-const backupEl = $('#backup');
 const importFileEl = $('#import-file');
 const LAST_BACKUP_KEY = 'notes.lastBackup';
 const SNOOZE_KEY = 'notes.backupSnooze';
@@ -1571,7 +1770,7 @@ function localDate(ts) {
 }
 
 async function exportNotes() {
-  backupEl.open = false;
+  closeDrawer({ navigating: true });
   if (saveTimer) flushSave();
   const keep = notes.filter((n) => !isBlank(n));
   // The backup file carries the notes' images too, so it restores completely on another device.
@@ -1657,17 +1856,13 @@ $('#nudge-later').addEventListener('click', () => {
 
 $('#export').addEventListener('click', exportNotes);
 $('#import').addEventListener('click', () => {
-  backupEl.open = false;
+  closeDrawer({ navigating: true });
   importFileEl.click();
 });
 importFileEl.addEventListener('change', () => {
   const [file] = importFileEl.files;
   importFileEl.value = ''; // so picking the same file again still fires
   if (file) importNotes(file);
-});
-// Close the menu when clicking anywhere else.
-document.addEventListener('click', (e) => {
-  if (backupEl.open && !backupEl.contains(e.target)) backupEl.open = false;
 });
 
 // ---------- Sync with another device (sync.js does the connecting) ----------
@@ -1703,7 +1898,7 @@ function endSyncSession() {
 }
 
 function openSyncDialog(step) {
-  backupEl.open = false;
+  closeDrawer({ navigating: true });
   setSyncStep(step);
   if (!syncEl.open) syncEl.showModal();
 }
@@ -2041,8 +2236,7 @@ listEl.addEventListener('click', (e) => {
   const item = e.target.closest('.note-item');
   if (!item) return;
   if (swallowClick) { swallowClick = false; return; }
-  const words = searchWords();
-  openNote(item.dataset.id, { jumpTo: words[0] ?? null });
+  openNote(item.dataset.id);
 });
 
 // ↑/↓ move through the list; Enter opens (it's a button).
@@ -2110,7 +2304,7 @@ listEl.addEventListener('touchmove', (e) => {
 }, { passive: true });
 listEl.addEventListener('touchend', () => {
   if (!pull) return;
-  if ((pull.dy ?? 0) > 80) { searchEl.focus(); searchEl.select(); }
+  if ((pull.dy ?? 0) > 80) openDrawer({ search: true });
   listEl.style.removeProperty('--pull');
   pull = null;
 });
@@ -2133,14 +2327,12 @@ setListCollapsed(getSetting(LIST_KEY) === '1');
 
 collapseBtn.addEventListener('click', () => setListCollapsed(true, { moveFocus: true }));
 expandBtn.addEventListener('click', () => setListCollapsed(false, { moveFocus: true }));
-$('#rail-search').addEventListener('click', () => {
-  setListCollapsed(false);
-  searchEl.focus();
-});
+$('#rail-search').addEventListener('click', () => openDrawer({ search: true }));
 for (const id of ['#new-note', '#new-note-fab', '#rail-new']) $(id).addEventListener('click', () => newNote());
 $('#back').addEventListener('click', leaveEditorView);
 window.addEventListener('popstate', () => {
-  if (!viewerEl.hidden) closeViewer({ fromHistory: true });
+  if (!drawerEl.hidden) closeDrawer({ fromHistory: true });
+  else if (!viewerEl.hidden) closeViewer({ fromHistory: true });
   else if (document.body.dataset.view === 'editor') showList();
 });
 pinBtn.addEventListener('click', () => togglePinFor(activeNote()));
@@ -2148,17 +2340,6 @@ $('#undo').addEventListener('click', runUndo);
 
 // ---------- Search, sort, tags ----------
 
-searchEl.addEventListener('input', renderList);
-searchEl.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && searchEl.value) {
-    e.stopPropagation();
-    searchEl.value = '';
-    renderList();
-  } else if (e.key === 'ArrowDown') {
-    e.preventDefault();
-    listEl.querySelector('.note-item')?.focus();
-  }
-});
 
 sortEl.addEventListener('change', () => {
   sortBy = sortEl.value in SORTS ? sortEl.value : 'updated';
@@ -2437,6 +2618,10 @@ document.addEventListener('keydown', (e) => {
     fmtToggleEl.focus();
     return;
   }
+  if (e.key === 'Escape' && !drawerEl.hidden) {
+    closeDrawer();
+    return;
+  }
   if (e.key === 'Escape' && !nbMenu.hidden) {
     closeNotebookMenu();
     nbBtn.focus();
@@ -2453,10 +2638,7 @@ document.addEventListener('keydown', (e) => {
     setListCollapsed(document.body.dataset.list !== 'collapsed', { moveFocus: true });
   } else if (mod && e.key.toLowerCase() === 'k') {
     e.preventDefault();
-    if (document.body.dataset.view === 'editor' && phoneLayout.matches) leaveEditorView();
-    setListCollapsed(false);
-    searchEl.focus();
-    searchEl.select();
+    openDrawer({ search: true });
   } else if (e.key === '?' && !mod && !typingTarget(e.target)) {
     e.preventDefault();
     openHelp();
