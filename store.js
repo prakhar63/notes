@@ -3,10 +3,13 @@
 export const STORAGE_KEY = 'notes.v1';
 const COLORS = ['paper', 'cornflower', 'chartreuse', 'peach', 'mint', 'pink'];
 
+// Validates the core fields. Any other fields (pins, checklists, images in
+// later versions) pass through untouched, so a reload never drops them.
 function normalize(raw) {
   if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string') return null;
   const now = Date.now();
   return {
+    ...raw,
     id: raw.id,
     title: typeof raw.title === 'string' ? raw.title : '',
     body: typeof raw.body === 'string' ? raw.body : '',

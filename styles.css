@@ -70,11 +70,54 @@ button { cursor: pointer; }
 .sidebar-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
+/* ---------- Collapsible list (desktop) ---------- */
+
+.collapse-btn {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+}
+.collapse-btn:hover { background: rgb(43 38 33 / 0.06); color: var(--ink); }
+
+.rail {
+  display: none;
+  flex: 0 0 72px;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 0;
+}
+.rail-btn {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+}
+.rail-btn:hover { background: rgb(43 38 33 / 0.06); color: var(--ink); }
+.rail-expand { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(43 38 33 / 0.08); }
+.rail-expand:hover { background: var(--surface); }
+.rail-new { border-radius: 50%; background: var(--coral); color: var(--coral-ink); }
+.rail-new:hover { background: var(--coral); filter: brightness(1.06); color: var(--coral-ink); }
+
+body[data-list="collapsed"] .sidebar { display: none; }
+body[data-list="collapsed"] .rail { display: flex; }
+body[data-list="collapsed"] .editor-wrap { padding-left: 0; }
+body[data-list="collapsed"] .page { max-width: 760px; }
+
 .brand {
+  flex: 1;
   margin: 0;
   font: 600 26px/1.2 var(--font-write);
   letter-spacing: -0.01em;
@@ -429,6 +472,10 @@ button { cursor: pointer; }
   .sort select { min-height: 44px; }
   .brand { font-size: 30px; }
   .sidebar-head .btn-primary { display: none; }
+
+  /* Collapsing is a desktop feature: phones always show the list screen. */
+  .collapse-btn, body[data-list="collapsed"] .rail { display: none; }
+  body[data-list="collapsed"] .sidebar { display: flex; }
 
   .note-list { gap: 6px; padding-bottom: 104px; }
   .note-item { border-radius: 14px; }

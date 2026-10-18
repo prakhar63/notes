@@ -380,6 +380,30 @@ listEl.addEventListener('click', (e) => {
 
 $('#new-note').addEventListener('click', newNote);
 $('#new-note-fab').addEventListener('click', newNote);
+
+// ---------- Collapsible list (desktop) ----------
+
+const LIST_KEY = 'notes.listCollapsed';
+const collapseBtn = $('#collapse-list');
+const expandBtn = $('#expand-list');
+
+function setListCollapsed(collapsed, { moveFocus = false } = {}) {
+  document.body.dataset.list = collapsed ? 'collapsed' : 'open';
+  collapseBtn.setAttribute('aria-expanded', String(!collapsed));
+  try { localStorage.setItem(LIST_KEY, collapsed ? '1' : '0'); } catch { /* not remembered; still works */ }
+  // Keep keyboard focus on the control that just took the place of the one pressed.
+  if (moveFocus) (collapsed ? expandBtn : collapseBtn).focus();
+}
+
+try { setListCollapsed(localStorage.getItem(LIST_KEY) === '1'); } catch { setListCollapsed(false); }
+
+collapseBtn.addEventListener('click', () => setListCollapsed(true, { moveFocus: true }));
+expandBtn.addEventListener('click', () => setListCollapsed(false, { moveFocus: true }));
+$('#rail-new').addEventListener('click', newNote);
+$('#rail-search').addEventListener('click', () => {
+  setListCollapsed(false);
+  searchEl.focus();
+});
 $('#back').addEventListener('click', leaveEditorView);
 window.addEventListener('popstate', () => {
   if (document.body.dataset.view === 'editor') showList();
@@ -431,9 +455,13 @@ document.addEventListener('keydown', (e) => {
   if (mod && e.altKey && !altGr && e.code === 'KeyN') {
     e.preventDefault();
     newNote();
+  } else if (mod && e.key === '\\' && !phoneLayout.matches) {
+    e.preventDefault();
+    setListCollapsed(document.body.dataset.list !== 'collapsed', { moveFocus: true });
   } else if (mod && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     if (document.body.dataset.view === 'editor') leaveEditorView();
+    setListCollapsed(false);
     searchEl.focus();
     searchEl.select();
   } else if (e.key === 'Escape' && document.body.dataset.view === 'editor' && phoneLayout.matches) {
