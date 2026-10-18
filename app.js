@@ -561,5 +561,29 @@ renderList();
 renderEditor();
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('Offline support unavailable:', err));
+  // A page that was already run by a worker gets swapped to a new version mid-session:
+  // reload so every file comes from that version. Wait if you're typing.
+  const hadWorker = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  const reloadForUpdate = () => {
+    if (reloading) return;
+    reloading = true;
+    flushPending();
+    location.reload();
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadWorker) return; // first install: this page is already the current version
+    const typing = document.activeElement === titleEl || document.activeElement === bodyEl;
+    if (!typing) reloadForUpdate();
+    else document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') reloadForUpdate(); });
+  });
+
+  navigator.serviceWorker.register('./sw.js')
+    .then((reg) => {
+      // An installed app can stay open for days: look for a new version whenever it comes back.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    })
+    .catch((err) => console.warn('Offline support unavailable:', err));
 }

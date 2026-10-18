@@ -1,14 +1,19 @@
-// Service worker: makes the app load offline.
-// App files are served from the cache and refreshed in the background
-// (stale-while-revalidate), so a change shows up on the next launch.
-// Bump VERSION when the list of SHELL files changes.
+// Service worker: makes the app load offline, and updates it as one piece.
+//
+// Each deploy is a new VERSION (tools/deploy.mjs stamps it from the site's
+// contents). The browser sees a changed sw.js, installs this worker, and the
+// worker downloads the whole app fresh into a new cache before taking over.
+// So every file the page loads always comes from the same version — a new
+// index.html can never be paired with an old app.js.
+//
+// On localhost the app is served network-first, so edits show up on reload.
 
-const VERSION = 'v2';
+const VERSION = 'ffc6a099e5'; // replaced at deploy time; leave as-is in the source
 const SHELL_CACHE = `notes-shell-${VERSION}`;
 const FONT_CACHE = 'notes-fonts';
+const DEV = ['localhost', '127.0.0.1', '[::1]'].includes(self.location.hostname);
 
 const SHELL = [
-  './',
   './index.html',
   './styles.css',
   './app.js',
@@ -26,7 +31,8 @@ const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(SHELL_CACHE)
-      .then((cache) => cache.addAll(SHELL))
+      // cache: 'reload' skips the browser's HTTP cache, so nothing stale sneaks in.
+      .then((cache) => cache.addAll(SHELL.map((url) => new Request(url, { cache: 'reload' }))))
       .then(() => self.skipWaiting()),
   );
 });
@@ -41,18 +47,38 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Answer from the cache when we can, and refresh the cached copy in the background.
-// The refresh is handed to event.waitUntil so the browser doesn't cut it short.
-function staleWhileRevalidate(event, cacheName, { cacheKey = event.request, ignoreSearch = false } = {}) {
-  const cacheP = caches.open(cacheName);
+// App files: from this version's cache; the network only for anything not in it.
+async function fromShell(request) {
+  const cacheKey = request.mode === 'navigate' ? './index.html' : request;
+  const cached = await caches.match(cacheKey, { cacheName: SHELL_CACHE, ignoreSearch: true });
+  return cached || fetch(request);
+}
+
+// Local development: always the latest file, with the cache as an offline fallback.
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request, { cache: 'no-store' });
+    if (response.ok) {
+      const cache = await caches.open(SHELL_CACHE);
+      await cache.put(request.mode === 'navigate' ? './index.html' : request, response.clone());
+    }
+    return response;
+  } catch {
+    const cacheKey = request.mode === 'navigate' ? './index.html' : request;
+    return (await caches.match(cacheKey, { cacheName: SHELL_CACHE, ignoreSearch: true })) || Response.error();
+  }
+}
+
+// Fonts never change at a given URL: serve the cached copy, refresh it in the background.
+function fontStaleWhileRevalidate(event) {
+  const cacheP = caches.open(FONT_CACHE);
   const fresh = cacheP.then((cache) => fetch(event.request).then((response) => {
-    if (response.ok || response.type === 'opaque') return cache.put(cacheKey, response.clone()).then(() => response);
+    if (response.ok || response.type === 'opaque') return cache.put(event.request, response.clone()).then(() => response);
     return response;
   })).catch(() => undefined);
   event.waitUntil(fresh);
-
   return cacheP
-    .then((cache) => cache.match(cacheKey, { ignoreSearch }))
+    .then((cache) => cache.match(event.request))
     .then(async (cached) => cached || (await fresh) || Response.error());
 }
 
@@ -62,11 +88,8 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   if (url.origin === self.location.origin) {
-    // Every page navigation gets the app shell.
-    const cacheKey = request.mode === 'navigate' ? './index.html' : request;
-    event.respondWith(staleWhileRevalidate(event, SHELL_CACHE, { cacheKey, ignoreSearch: true }));
+    event.respondWith(DEV ? networkFirst(request) : fromShell(request));
   } else if (FONT_HOSTS.includes(url.hostname)) {
-    // Font URLs differ only by query string, so match them exactly.
-    event.respondWith(staleWhileRevalidate(event, FONT_CACHE));
+    event.respondWith(fontStaleWhileRevalidate(event));
   }
 });
