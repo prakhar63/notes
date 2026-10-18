@@ -10,6 +10,7 @@ import {
   uid, textBlock, checklistBlock, newItem, allItems, contentText, blockIsEmpty,
   insertChecklist, appendChecklist, removeChecklist, exitChecklist, removeTextBlock,
 } from './blocks.js';
+import { host, join, parsePairHash, qrCode, CODE_MS } from './sync.js';
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -1669,6 +1670,226 @@ document.addEventListener('click', (e) => {
   if (backupEl.open && !backupEl.contains(e.target)) backupEl.open = false;
 });
 
+// ---------- Sync with another device (sync.js does the connecting) ----------
+
+const syncEl = $('#sync');
+const deviceKind = () => (phoneLayout.matches ? 'phone' : 'computer');
+const otherKind = (kind) => (kind === 'phone' ? 'computer' : 'phone');
+const capital = (word) => word.charAt(0).toUpperCase() + word.slice(1);
+let syncSession = null; // the sync in progress: { role, host, channel, timer }
+let syncRetry = null;
+
+const SYNC_FAILURES = {
+  offline: 'Can’t reach the internet, which is needed to find the other device. Nothing was changed.',
+  expired: 'That code has expired or was already used. Make a new code on your computer and scan it again.',
+  timeout: 'Your network may be blocking a direct link between the two devices. Nothing was changed.',
+  refused: 'The other device ended the connection. Nothing was changed.',
+  unsupported: 'This browser can’t make direct connections. Try Chrome, Edge or Safari.',
+  failed: 'Something went wrong while connecting. Nothing was changed.',
+};
+
+const syncInfo = () => ({ device: deviceKind(), notes: notes.filter((n) => !isDeleted(n) && !isBlank(n)).length });
+const setSyncStep = (step) => { syncEl.dataset.step = step; };
+const setSyncStatus = (text) => { $('#sync-status-text').textContent = text; };
+const countLabel = (n) => `${n} ${n === 1 ? 'note' : 'notes'}`;
+
+function endSyncSession() {
+  const session = syncSession;
+  syncSession = null;
+  if (!session) return;
+  clearInterval(session.timer);
+  session.host?.stop();
+  session.channel?.close();
+}
+
+function openSyncDialog(step) {
+  backupEl.open = false;
+  setSyncStep(step);
+  if (!syncEl.open) syncEl.showModal();
+}
+
+function closeSync() {
+  endSyncSession();
+  if (syncEl.open) syncEl.close();
+}
+
+function showSyncFailure(err) {
+  endSyncSession();
+  $('#sync-fail-text').textContent = SYNC_FAILURES[err?.reason] ?? SYNC_FAILURES.failed;
+  // An old code can't be retried from here: the computer has to make a new one.
+  const retryHelps = !['expired', 'unsupported'].includes(err?.reason);
+  syncEl.querySelector('.sync-tips').hidden = !retryHelps;
+  $('#sync-retry').hidden = !retryHelps;
+  setSyncStep('failed');
+}
+
+async function drawSyncCode(link) {
+  const { size, path } = await qrCode(link);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `-2 -2 ${size + 4} ${size + 4}`);
+  svg.setAttribute('shape-rendering', 'crispEdges');
+  svg.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', path);
+  svg.append(p);
+  $('#sync-qr').replaceChildren(svg);
+}
+
+// A code only works for a few minutes, so an old screenshot of it can't be used later.
+function startCodeTimer(session) {
+  const ends = Date.now() + CODE_MS;
+  const tick = () => {
+    const left = Math.max(0, ends - Date.now());
+    if (!left) {
+      clearInterval(session.timer);
+      session.host.stop();
+      $('#sync-qr').replaceChildren();
+      syncEl.classList.remove('waiting');
+      setSyncStatus('This code has expired');
+      $('#sync-timer').textContent = '';
+      $('#sync-new-code').hidden = false;
+      return;
+    }
+    const s = Math.ceil(left / 1000);
+    $('#sync-timer').textContent = `Code works for ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+  tick();
+  session.timer = setInterval(tick, 1000);
+}
+
+// The computer: show a code and wait for a phone to scan it.
+function startSyncHost() {
+  endSyncSession();
+  if (deviceKind() === 'phone') { openSyncDialog('howto'); return; }
+  syncRetry = startSyncHost;
+  const session = { role: 'host' };
+  syncSession = session;
+  $('#sync-qr').replaceChildren();
+  $('#sync-timer').textContent = '';
+  $('#sync-new-code').hidden = true;
+  syncEl.classList.add('waiting');
+  setSyncStatus('Making a code…');
+  openSyncDialog('code');
+  session.host = host({
+    info: syncInfo,
+    onReady(link) {
+      if (syncSession !== session) return;
+      drawSyncCode(link)
+        .then(() => {
+          if (syncSession !== session) return;
+          setSyncStatus(`Waiting for your ${otherKind(deviceKind())}…`);
+          startCodeTimer(session);
+        })
+        .catch(showSyncFailure);
+    },
+    onPaired(channel) {
+      if (syncSession !== session) { channel.close(); return; }
+      session.channel = channel;
+      clearInterval(session.timer);
+      $('#sync-timer').textContent = '';
+      setSyncStatus(`${capital(channel.info.device ?? 'phone')} connected. Tap Sync now on it.`);
+      listenToChannel(session);
+    },
+    onError(err) { if (syncSession === session) showSyncFailure(err); },
+  });
+}
+
+// The phone, opened from the code's link: connect, then ask before syncing.
+async function startSyncJoin(code) {
+  endSyncSession();
+  syncRetry = () => startSyncJoin(code);
+  const session = { role: 'join' };
+  syncSession = session;
+  const own = deviceKind();
+  syncEl.querySelectorAll('.sync-own-name').forEach((n) => { n.textContent = own; });
+  syncEl.querySelectorAll('.sync-other-name').forEach((n) => { n.textContent = otherKind(own); });
+  syncEl.querySelector('.sync-other-cap').textContent = capital(otherKind(own));
+  $('#sync-own-count').textContent = syncInfo().notes;
+  $('#sync-other-count').textContent = '…';
+  $('#sync-connecting').hidden = false;
+  $('#sync-start').disabled = true;
+  openSyncDialog('confirm');
+  try {
+    const channel = await join(code, syncInfo());
+    if (syncSession !== session) { channel.close(); return; }
+    session.channel = channel;
+    const other = channel.info.device ?? otherKind(own);
+    syncEl.querySelectorAll('.sync-other-name').forEach((n) => { n.textContent = other; });
+    syncEl.querySelector('.sync-other-cap').textContent = capital(other);
+    $('#sync-other-count').textContent = channel.info.notes ?? '–';
+    $('#sync-connecting').hidden = true;
+    $('#sync-start').disabled = false;
+    $('#sync-start').focus();
+    listenToChannel(session);
+  } catch (err) {
+    if (syncSession === session) showSyncFailure(err);
+  }
+}
+
+function listenToChannel(session) {
+  const { channel } = session;
+  channel.onMessage((msg) => {
+    if (syncSession !== session) return;
+    if (msg.type === 'start' && session.role === 'host') {
+      showSyncProgress('Checking notes…', 50);
+      // Sprint 1: the two devices only meet. Copying notes across comes next.
+      channel.send({ type: 'done' });
+      showSyncDone(session);
+    } else if (msg.type === 'done' && session.role === 'join') {
+      showSyncDone(session);
+      endSyncSession();
+    }
+  });
+  channel.onClose(() => {
+    if (syncSession === session && syncEl.dataset.step !== 'done') showSyncFailure({ reason: 'refused' });
+  });
+}
+
+function showSyncProgress(text, percent) {
+  $('#sync-progress').textContent = text;
+  $('#sync-bar-fill').style.width = `${percent}%`;
+  syncEl.querySelector('.sync-bar').setAttribute('aria-valuenow', String(percent));
+  setSyncStep('syncing');
+}
+
+function showSyncDone(session) {
+  const other = session.channel.info;
+  const otherName = other.device ?? otherKind(deviceKind());
+  const same = otherName === deviceKind(); // two computers, or two phones
+  $('#sync-done-title').textContent = 'Connected';
+  $('#sync-done-text').textContent = `This ${deviceKind()} and ${same ? 'the other' : 'your'} ${otherName} can reach each other directly. Copying notes between them is the next step we build.`;
+  const row = (label, value) => {
+    const li = el('li');
+    li.append(el('span', '', label), el('strong', '', value));
+    return li;
+  };
+  $('#sync-stats').replaceChildren(
+    row(`This ${deviceKind()}`, countLabel(syncInfo().notes)),
+    row(same ? `Other ${otherName}` : capital(otherName), countLabel(other.notes ?? 0)),
+  );
+  $('#sync-note').hidden = true;
+  setSyncStep('done');
+}
+
+$('#sync-open').addEventListener('click', startSyncHost);
+$('#sync-new-code').addEventListener('click', startSyncHost);
+$('#sync-close').addEventListener('click', closeSync);
+$('#sync-retry').addEventListener('click', () => syncRetry?.());
+$('#sync-start').addEventListener('click', () => {
+  const session = syncSession;
+  if (!session?.channel) return;
+  session.channel.send({ type: 'start' });
+  showSyncProgress('Checking notes…', 50);
+});
+syncEl.querySelectorAll('.sync-cancel').forEach((b) => b.addEventListener('click', closeSync));
+syncEl.querySelectorAll('.sync-backup').forEach((b) => b.addEventListener('click', () => { closeSync(); exportNotes(); }));
+syncEl.addEventListener('close', endSyncSession);
+
+// The menu says what this device pairs with.
+const labelSyncItem = () => { $('#sync-open').textContent = `Sync with ${otherKind(deviceKind())}`; };
+labelSyncItem();
+phoneLayout.addEventListener('change', labelSyncItem);
+
 // ---------- The list: open, keyboard, swipe, pull ----------
 
 let swallowClick = false; // a swipe ends with a click; don't open the note too
@@ -2156,6 +2377,18 @@ restorePosition();
   else if (params.get('new') === 'checklist') newNote({ checklist: true });
   else if (params.get('new')) newNote();
 }());
+
+// Opened from a sync code's link (#pair=…): connect to the device that showed it.
+// The link may also land in a tab where the app is already open (only the #hash changes).
+function handlePairLink() {
+  if (!location.hash.startsWith('#pair=')) return;
+  const code = parsePairHash(location.hash);
+  history.replaceState(history.state, '', location.pathname + location.search);
+  if (code) startSyncJoin(code);
+  else showToast('That sync link is incomplete. Scan the code again.');
+}
+handlePairLink();
+window.addEventListener('hashchange', handlePairLink);
 
 // After an automatic update, say so (the reload could otherwise look like a glitch).
 try {

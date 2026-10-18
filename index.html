@@ -87,6 +87,7 @@
       <details id="backup" class="backup">
         <summary>More</summary>
         <div class="backup-menu">
+          <button id="sync-open" type="button">Sync with phone</button>
           <button id="export" type="button">Back up notes (export)</button>
           <button id="import" type="button">Restore from backup…</button>
           <button id="show-help" type="button">Keyboard shortcuts</button>
@@ -264,6 +265,104 @@
         <button value="close" class="dialog-btn primary" type="submit">Close</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="sync" class="dialog sync" aria-labelledby="sync-title" data-step="code">
+    <button id="sync-close" class="sync-close" type="button" aria-label="Close">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+
+    <!-- Computer: show a code to scan -->
+    <section class="sync-step" data-for="code">
+      <h2 id="sync-title" class="dialog-title">Sync with your phone</h2>
+      <p class="dialog-message">Both end up with the newest copy of every note.</p>
+      <div class="sync-code">
+        <div id="sync-qr" class="sync-qr" role="img" aria-label="Pairing code to scan with your phone"></div>
+        <ol class="sync-steps">
+          <li><span class="sync-num">1</span><span>Open the camera on your phone</span></li>
+          <li><span class="sync-num">2</span><span>Point it at this code and tap the link</span></li>
+          <li><span class="sync-num">3</span><span>Tap <strong>Sync now</strong> on your phone</span></li>
+        </ol>
+      </div>
+      <div class="sync-status">
+        <span class="sync-dot" aria-hidden="true"></span>
+        <span id="sync-status-text" class="sync-status-text" role="status">Making a code…</span>
+        <span id="sync-timer" class="sync-timer"></span>
+        <button id="sync-new-code" class="sync-link" type="button" hidden>New code</button>
+      </div>
+      <p class="sync-private">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        Notes go straight between your two devices, encrypted. They are never stored on a server.
+      </p>
+      <div class="sync-foot">
+        <button class="sync-link sync-backup" type="button">Can’t connect? Send a backup file instead</button>
+        <button class="dialog-btn sync-cancel" type="button">Cancel</button>
+      </div>
+    </section>
+
+    <!-- Phone, from its own More menu: how to start -->
+    <section class="sync-step" data-for="howto">
+      <h2 class="dialog-title sync-big">Sync with your computer</h2>
+      <ol class="sync-steps">
+        <li><span class="sync-num">1</span><span>On your computer, open this app and choose <strong>More → Sync with phone</strong></span></li>
+        <li><span class="sync-num">2</span><span>Scan the code it shows with this phone’s camera</span></li>
+        <li><span class="sync-num">3</span><span>Tap <strong>Sync now</strong></span></li>
+      </ol>
+      <div class="sync-actions">
+        <button class="dialog-btn primary sync-cancel" type="button">Got it</button>
+      </div>
+    </section>
+
+    <!-- Phone, after scanning: connect, then confirm -->
+    <section class="sync-step" data-for="confirm">
+      <h2 class="dialog-title sync-big">Sync with your <span class="sync-other-name">computer</span>?</h2>
+      <p class="dialog-message">Both will end up with the newest copy of every note. Nothing is deleted that you didn’t delete.</p>
+      <div class="sync-counts">
+        <div class="sync-count"><span>This <span class="sync-own-name">phone</span></span><strong id="sync-own-count">–</strong><span>notes</span></div>
+        <div class="sync-count"><span class="sync-other-cap">Computer</span><strong id="sync-other-count">…</strong><span>notes</span></div>
+      </div>
+      <p id="sync-connecting" class="sync-connecting" role="status">Connecting…</p>
+      <div class="sync-actions">
+        <button class="dialog-btn sync-cancel" type="button">Not now</button>
+        <button id="sync-start" class="dialog-btn primary" type="button" disabled>Sync now</button>
+      </div>
+    </section>
+
+    <!-- Both: working -->
+    <section class="sync-step sync-center" data-for="syncing">
+      <div class="sync-spinner" aria-hidden="true"></div>
+      <h2 class="dialog-title">Syncing…</h2>
+      <div class="sync-bar" role="progressbar" aria-label="Sync progress" aria-valuemin="0" aria-valuemax="100"><div id="sync-bar-fill"></div></div>
+      <p id="sync-progress" class="dialog-message" role="status"></p>
+      <p class="dialog-message sync-small">Keep this screen open until it finishes.</p>
+    </section>
+
+    <!-- Both: finished -->
+    <section class="sync-step" data-for="done">
+      <div class="sync-badge" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></div>
+      <h2 id="sync-done-title" class="dialog-title">Synced</h2>
+      <p id="sync-done-text" class="dialog-message"></p>
+      <ul id="sync-stats" class="sync-stats"></ul>
+      <p id="sync-note" class="sync-notice" hidden></p>
+      <div class="sync-actions">
+        <button class="dialog-btn primary sync-cancel" type="button">Done</button>
+      </div>
+    </section>
+
+    <!-- Both: couldn't connect -->
+    <section class="sync-step" data-for="failed">
+      <div class="sync-badge warn" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0M9 15.5a5 5 0 0 1 6 0M12 19h.01M4 4l16 16"/></svg></div>
+      <h2 id="sync-fail-title" class="dialog-title">Couldn’t connect</h2>
+      <p id="sync-fail-text" class="dialog-message"></p>
+      <ul class="sync-tips">
+        <li>Put both on the same Wi‑Fi and try again</li>
+        <li>Or send a backup file: it brings your notes across too</li>
+      </ul>
+      <div class="sync-actions">
+        <button class="dialog-btn sync-backup" type="button">Send backup file</button>
+        <button id="sync-retry" class="dialog-btn primary" type="button">Try again</button>
+      </div>
+    </section>
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden>
