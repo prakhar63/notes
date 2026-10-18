@@ -1,5 +1,5 @@
 import { loadNotes, saveNotes, STORAGE_KEY, backupJSON, parseBackup, mergeNotes } from './store.js';
-import { listEnter, listIndent } from './lists.js';
+import { listEnter, listIndent, toggleList } from './lists.js';
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -671,6 +671,18 @@ bodyEl.addEventListener('beforeinput', (e) => {
   e.preventDefault();
   applyEdit(bodyEl, result);
 });
+
+// The Numbered / Bulleted list buttons work on the note text's current line(s).
+for (const [id, kind] of [['#list-numbered', 'numbered'], ['#list-bullet', 'bullet']]) {
+  const btn = $(id);
+  // Keep the text box focused (and its selection) when the button is pressed.
+  btn.addEventListener('pointerdown', (e) => e.preventDefault());
+  btn.addEventListener('click', () => {
+    const result = toggleList(bodyEl.value, bodyEl.selectionStart, bodyEl.selectionEnd, kind);
+    bodyEl.focus();
+    applyEdit(bodyEl, result);
+  });
+}
 
 // Enter in the title moves on to the body, like a notebook heading.
 titleEl.addEventListener('keydown', (e) => {

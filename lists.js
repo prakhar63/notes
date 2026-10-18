@@ -91,6 +91,57 @@ export function listEnter(text, pos) {
 }
 
 /**
+ * The Numbered / Bulleted list buttons. Turns the selected lines (or the caret's line) into
+ * that kind of list, or, if they all already are, back into plain lines.
+ * `kind` is 'numbered' or 'bullet'.
+ */
+export function toggleList(text, selStart, selEnd, kind) {
+  const lines = text.split('\n');
+  const first = lineIndexAt(lines, selStart);
+  const last = lineIndexAt(lines, selEnd);
+  const caretFromEnd = lineOffset(lines, last) + lines[last].length - selEnd;
+  const numbered = kind === 'numbered';
+  const isKind = (it) => it && (numbered ? it.num !== null : it.num === null);
+
+  // Blank lines inside a multi-line selection stay blank.
+  const targets = [];
+  for (let k = first; k <= last; k++) if (first === last || lines[k].trim()) targets.push(k);
+  const removing = targets.every((k) => isKind(parseItem(lines[k])));
+
+  // Continue the numbering of a numbered item right above, if there is one.
+  const above = first > 0 ? parseItem(lines[first - 1]) : null;
+  let n = above && above.num !== null ? above.num + 1 : 1;
+
+  for (const k of targets) {
+    const it = parseItem(lines[k]);
+    if (removing) {
+      lines[k] = it.indent + it.content;
+      continue;
+    }
+    const indent = it ? it.indent : lines[k].match(/^ */)[0];
+    const content = it ? it.content : lines[k].slice(indent.length);
+    lines[k] = formatItem({
+      indent,
+      num: numbered ? n++ : null,
+      delim: it?.delim || '.',
+      bullet: it?.bullet || '-',
+      content,
+    });
+  }
+  renumberBlock(lines, first);
+
+  if (selStart === selEnd) {
+    const caret = lineOffset(lines, first) + lines[first].length - caretFromEnd;
+    return { text: lines.join('\n'), selStart: caret, selEnd: caret };
+  }
+  return {
+    text: lines.join('\n'),
+    selStart: lineOffset(lines, first),
+    selEnd: lineOffset(lines, last) + lines[last].length,
+  };
+}
+
+/**
  * Tab (or Shift+Tab when `outdent`) over the selection. Returns null when no selected
  * line is a list item, so Tab keeps moving focus as usual.
  */
