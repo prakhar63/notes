@@ -229,6 +229,38 @@ body[data-list="collapsed"] .page { max-width: 760px; }
 }
 
 .note-date { font-size: 12px; color: var(--tile-muted); }
+.note-pin { display: grid; fill: var(--coral); }
+
+/* "Pinned · 2 of 5" / "Notes" headings in the list */
+.list-section {
+  display: flex;
+  gap: 6px;
+  padding: 6px 4px 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.list-section-count { font-weight: 400; letter-spacing: 0; text-transform: none; }
+
+/* Pin toggle in the editor bar */
+.pin-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px #d8d2c7;
+}
+.pin-btn svg { fill: none; stroke: currentColor; }
+.pin-btn[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--coral); }
+.pin-btn[aria-pressed="true"] svg { fill: var(--coral); stroke: var(--coral); }
 
 .note-preview {
   display: block;
@@ -472,6 +504,11 @@ body[data-list="collapsed"] .page { max-width: 760px; }
   .sort select { min-height: 44px; }
   .brand { font-size: 30px; }
   .sidebar-head .btn-primary { display: none; }
+
+  /* Phone editor bar: pin is icon-only to save room. */
+  .pin-btn { width: 44px; height: 44px; padding: 0; justify-content: center; background: transparent; box-shadow: none; }
+  .pin-btn[aria-pressed="true"] { box-shadow: none; }
+  .pin-label { display: none; }
 
   /* Collapsing is a desktop feature: phones always show the list screen. */
   .collapse-btn, body[data-list="collapsed"] .rail { display: none; }

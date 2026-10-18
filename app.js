@@ -123,7 +123,7 @@ function renderList() {
 
   const dateOf = (note) => (sortBy === 'created' ? note.createdAt : note.updatedAt);
 
-  listEl.replaceChildren(...shown.map((note) => {
+  const item = (note) => {
     const btn = el('button', 'note-item');
     btn.type = 'button';
     btn.dataset.id = note.id;
@@ -133,18 +133,70 @@ function renderList() {
     dot.dataset.color = note.color;
     dot.style.setProperty('--c', colorVar(note.color));
 
+    // Pinned notes show a pin where the date would be.
+    const end = isPinned(note) ? el('span', 'note-pin') : el('span', 'note-date', shortDate(dateOf(note)));
+    if (isPinned(note)) {
+      end.innerHTML = PIN_ICON;
+      end.setAttribute('role', 'img');
+      end.setAttribute('aria-label', 'Pinned');
+    }
+
     const row = el('span', 'note-row');
-    row.append(dot, el('span', 'note-title', displayTitle(note)), el('span', 'note-date', shortDate(dateOf(note))));
+    row.append(dot, el('span', 'note-title', displayTitle(note)), end);
     btn.append(row, el('span', 'note-preview', preview(note) || ' '));
 
     const li = el('li');
     li.append(btn);
     return li;
-  }));
+  };
+
+  // Pinned notes sit in their own section above everything else, in the current sort order.
+  const pinned = shown.filter(isPinned);
+  if (!pinned.length) {
+    listEl.replaceChildren(...shown.map(item));
+    return;
+  }
+  const section = (label, extra) => {
+    const li = el('li', 'list-section', label);
+    li.setAttribute('aria-hidden', 'true'); // screen readers hear "Pinned" on each tile instead
+    if (extra) li.append(el('span', 'list-section-count', extra));
+    return li;
+  };
+  const others = shown.filter((n) => !isPinned(n));
+  const pinTotal = notes.filter(isPinned).length;
+  listEl.replaceChildren(
+    section('Pinned', `· ${pinTotal} of ${MAX_PINS}`),
+    ...pinned.map(item),
+    ...(others.length ? [section('Notes'), ...others.map(item)] : []),
+  );
 }
 
 const activeNote = () => notes.find((n) => n.id === activeId);
 const isBlank = (note) => !note.title.trim() && !note.body.trim();
+
+// ---------- Pins ----------
+
+const MAX_PINS = 5;
+const PIN_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 6 3 3H7l3-3-1-6zM11 15h2v6h-2z"/></svg>';
+const pinBtn = $('#pin');
+const isPinned = (note) => Number.isFinite(note.pinnedAt);
+
+// Pinning is not an edit, so it doesn't change "last edited" or move the note in its section.
+function togglePin() {
+  const note = activeNote();
+  if (!note) return;
+  if (isPinned(note)) {
+    delete note.pinnedAt;
+  } else if (notes.filter(isPinned).length >= MAX_PINS) {
+    showToast(`You can pin up to ${MAX_PINS} notes. Unpin one first.`);
+    return;
+  } else {
+    note.pinnedAt = Date.now();
+  }
+  scheduleSave();
+  renderEditor();
+  renderList();
+}
 
 // ---------- Auto-save ----------
 
@@ -181,6 +233,9 @@ function renderEditor() {
   titleEl.value = note.title;
   bodyEl.value = note.body;
   renderMeta(note);
+  pinBtn.setAttribute('aria-pressed', String(isPinned(note)));
+  pinBtn.querySelector('.pin-label').textContent = isPinned(note) ? 'Pinned' : 'Pin';
+  pinBtn.title = isPinned(note) ? 'Unpin this note' : `Pin to the top (up to ${MAX_PINS})`;
 
   swatchesEl.replaceChildren(...PALETTE.map((p) => {
     const sw = el('button', 'swatch');
@@ -298,6 +353,8 @@ function deleteActive() {
 
 function undoDelete() {
   if (!lastDeleted) return;
+  // If the pin slots filled up meanwhile, bring the note back unpinned.
+  if (isPinned(lastDeleted) && notes.filter(isPinned).length >= MAX_PINS) delete lastDeleted.pinnedAt;
   notes.push(lastDeleted);
   const id = lastDeleted.id;
   hideToast();
@@ -409,6 +466,7 @@ window.addEventListener('popstate', () => {
   if (document.body.dataset.view === 'editor') showList();
 });
 $('#delete').addEventListener('click', deleteActive);
+pinBtn.addEventListener('click', togglePin);
 $('#undo').addEventListener('click', undoDelete);
 
 searchEl.addEventListener('input', renderList);
