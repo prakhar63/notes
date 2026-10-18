@@ -185,13 +185,16 @@ const isPinned = (note) => Number.isFinite(note.pinnedAt);
 function togglePin() {
   const note = activeNote();
   if (!note) return;
+  // Say what happened: on phones the list (and its Pinned section) is on another screen.
   if (isPinned(note)) {
     delete note.pinnedAt;
+    showToast('Unpinned', { ms: 2500 });
   } else if (notes.filter(isPinned).length >= MAX_PINS) {
     showToast(`You can pin up to ${MAX_PINS} notes. Unpin one first.`);
     return;
   } else {
     note.pinnedAt = Date.now();
+    showToast('Pinned to the top of your list', { ms: 2500 });
   }
   scheduleSave();
   renderEditor();
@@ -324,13 +327,13 @@ function hideToast() {
 }
 
 // One toast at a time; Undo shows only for a delete.
-function showToast(message, { undo = false } = {}) {
+function showToast(message, { undo = false, ms = UNDO_MS } = {}) {
   clearTimeout(toastTimer);
   lastDeleted = undo ? lastDeleted : null;
   toastMsgEl.textContent = message;
   undoEl.hidden = !undo;
   toastEl.hidden = false;
-  toastTimer = setTimeout(hideToast, UNDO_MS);
+  toastTimer = setTimeout(hideToast, ms);
 }
 
 function deleteActive() {
@@ -577,6 +580,14 @@ if ('serviceWorker' in navigator) {
     if (!typing) reloadForUpdate();
     else document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') reloadForUpdate(); });
   });
+
+  // Which version is running (handy when checking an update arrived): it's in the cache name.
+  caches.keys()
+    .then((keys) => {
+      const shell = keys.find((k) => k.startsWith('notes-shell-'));
+      $('#app-version').textContent = `Version ${shell ? shell.slice('notes-shell-'.length) : 'not installed yet'}`;
+    })
+    .catch(() => {});
 
   navigator.serviceWorker.register('./sw.js')
     .then((reg) => {

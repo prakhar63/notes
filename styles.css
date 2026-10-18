@@ -322,6 +322,11 @@ body[data-list="collapsed"] .page { max-width: 760px; }
   text-align: left;
 }
 .backup-menu button:hover { background: var(--bg); }
+.app-version {
+  margin: 4px 12px 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
 
 /* ---------- Editor ---------- */
 
@@ -506,8 +511,10 @@ body[data-list="collapsed"] .page { max-width: 760px; }
   .sidebar-head .btn-primary { display: none; }
 
   /* Phone editor bar: pin is icon-only to save room. */
-  .pin-btn { width: 44px; height: 44px; padding: 0; justify-content: center; background: transparent; box-shadow: none; }
-  .pin-btn[aria-pressed="true"] { box-shadow: none; }
+  .pin-btn { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 50%; background: transparent; box-shadow: none; }
+  .pin-btn svg { width: 22px; height: 22px; }
+  .pin-btn[aria-pressed="true"] { background: var(--coral); box-shadow: none; }
+  .pin-btn[aria-pressed="true"] svg { fill: var(--coral-ink); stroke: var(--coral-ink); }
   .pin-label { display: none; }
 
   /* Collapsing is a desktop feature: phones always show the list screen. */
