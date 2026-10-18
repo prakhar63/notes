@@ -1,4 +1,5 @@
 import { loadNotes, saveNotes, STORAGE_KEY, backupJSON, parseBackup, mergeNotes } from './store.js';
+import { listEnter, listIndent } from './lists.js';
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -626,6 +627,50 @@ swatchesEl.addEventListener('click', (e) => {
 
 titleEl.addEventListener('input', () => updateActive('title', titleEl.value));
 bodyEl.addEventListener('input', () => updateActive('body', bodyEl.value));
+
+// ---------- Smart lists in the note text ----------
+
+// Replace only the part of the text that changed, through the browser's own editing
+// command so Ctrl+Z still undoes it. Falls back to setting the value directly.
+function applyEdit(field, result) {
+  const old = field.value;
+  const next = result.text;
+  let p = 0;
+  while (p < old.length && p < next.length && old[p] === next[p]) p++;
+  let s = 0;
+  while (s < old.length - p && s < next.length - p && old[old.length - 1 - s] === next[next.length - 1 - s]) s++;
+  field.setSelectionRange(p, old.length - s);
+  const inserted = next.slice(p, next.length - s);
+  let ok = false;
+  try { ok = document.execCommand('insertText', false, inserted); } catch { /* unsupported */ }
+  if (!ok || field.value !== next) {
+    field.value = next;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  field.setSelectionRange(result.selStart, result.selEnd);
+}
+
+let shiftHeld = false; // Shift+Enter always inserts a plain line break
+
+bodyEl.addEventListener('keydown', (e) => {
+  shiftHeld = e.shiftKey;
+  if (e.key !== 'Tab' || e.ctrlKey || e.altKey || e.metaKey) return;
+  // Tab / Shift+Tab indent list lines; elsewhere Tab still moves focus as usual.
+  const result = listIndent(bodyEl.value, bodyEl.selectionStart, bodyEl.selectionEnd, e.shiftKey);
+  if (!result) return;
+  e.preventDefault();
+  applyEdit(bodyEl, result);
+});
+
+// beforeinput (rather than keydown) also catches Enter from phone keyboards.
+bodyEl.addEventListener('beforeinput', (e) => {
+  if (e.inputType !== 'insertLineBreak' && e.inputType !== 'insertParagraph') return;
+  if (shiftHeld || bodyEl.selectionStart !== bodyEl.selectionEnd) return;
+  const result = listEnter(bodyEl.value, bodyEl.selectionStart);
+  if (!result) return;
+  e.preventDefault();
+  applyEdit(bodyEl, result);
+});
 
 // Enter in the title moves on to the body, like a notebook heading.
 titleEl.addEventListener('keydown', (e) => {
