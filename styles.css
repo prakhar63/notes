@@ -151,14 +151,12 @@ button { cursor: pointer; }
   gap: 4px;
 }
 
-.wordmark {
+/* The notebook picker is the header title: "All notes", or the notebook you are in. */
+.sidebar-head .notebook-btn {
   flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--brand-text);
-  font: 600 18px/1 var(--font-write);
-  letter-spacing: 0.01em;
+  min-width: 0;
+  margin-right: 4px;
+  font: 600 17px/1.2 var(--font-write);
 }
 
 .head-btn {
@@ -191,14 +189,9 @@ button { cursor: pointer; }
 }
 .new-btn:hover, .fab:hover, .rail-new:hover { filter: brightness(1.12); }
 
-/* Journal header: today's date */
-.today { padding: 8px 2px 2px; }
-.today-day {
-  margin: 0;
-  font: 600 32px/1.1 var(--font-write);
-  letter-spacing: -0.01em;
-}
-.today-sub { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+/* Today's date on one line: "Sunday, 18 October · 2 notes today" */
+.today { margin: 0; padding: 0 2px; font-size: 14px; color: var(--muted); }
+.today-day { color: var(--ink); font-weight: 600; }
 
 /* ---------- Collapsible list (desktop) ---------- */
 
@@ -1291,7 +1284,6 @@ kbd {
     flex: 1;
     padding: calc(20px + env(safe-area-inset-top)) 16px 0;
   }
-  .today-day { font-size: 28px; }
   .sidebar-head .new-btn { display: none; } /* the round + at the bottom does this on phones */
 
   /* Collapsing is a desktop feature: phones always show the list screen. */

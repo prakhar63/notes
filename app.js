@@ -230,13 +230,15 @@ function editedLabel(ts) {
 
 // ---------- The list ----------
 
-// Journal header: "Saturday" / "18 October · 2 notes today"
+// Date line under search: "Sunday, 18 October · 2 notes today"
 function renderToday() {
   const now = new Date();
-  $('#today-day').textContent = now.toLocaleDateString(undefined, { weekday: 'long' });
+  const day = document.createElement('span');
+  day.className = 'today-day';
+  day.textContent = now.toLocaleDateString(undefined, { weekday: 'long' });
   const edited = notes.filter((n) => !isDeleted(n) && n.updatedAt >= startOfToday()).length;
   const date = now.toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
-  $('#today-sub').textContent = edited ? `${date} · ${edited} ${edited === 1 ? 'note' : 'notes'} today` : date;
+  $('#today').replaceChildren(day, `, ${date}` + (edited ? ` · ${edited} ${edited === 1 ? 'note' : 'notes'} today` : ''));
 }
 
 // The chip row above the list: every tag in the current view, most-used first.
