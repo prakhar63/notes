@@ -68,9 +68,14 @@ export function parsePairHash(hash) {
   return m ? { id: m[1], secret: m[2] } : null;
 }
 
+// Big messages go in pieces: a single WebRTC message can't be much over 64 KB everywhere.
+const PART_SIZE = 16000;
+
 // A connection both sides talk through, once the two have said hello.
+// onProgress(type, received, total) reports a big message arriving piece by piece.
 function channel(conn, peer, theirInfo) {
-  const listeners = { message: new Set(), close: new Set() };
+  const listeners = { message: new Set(), close: new Set(), progress: new Set() };
+  const incoming = new Map(); // big message id → { type, parts, got }
   let closed = false;
   const finish = () => {
     if (closed) return;
@@ -78,14 +83,35 @@ function channel(conn, peer, theirInfo) {
     listeners.close.forEach((fn) => fn());
     peer.destroy();
   };
-  conn.on('data', (msg) => { if (msg && typeof msg === 'object') listeners.message.forEach((fn) => fn(msg)); });
+  const deliver = (msg) => listeners.message.forEach((fn) => fn(msg));
+  conn.on('data', (msg) => {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type !== 'part') { deliver(msg); return; }
+    const big = incoming.get(msg.id) ?? { type: msg.of, parts: new Array(msg.n), got: 0 };
+    incoming.set(msg.id, big);
+    if (big.parts[msg.i] === undefined) { big.parts[msg.i] = msg.data; big.got += 1; }
+    listeners.progress.forEach((fn) => fn(big.type, big.got, msg.n));
+    if (big.got < msg.n) return;
+    incoming.delete(msg.id);
+    try { deliver(JSON.parse(big.parts.join(''))); } catch { /* damaged: ignore it */ }
+  });
   conn.on('close', finish);
   conn.on('error', finish);
   peer.on('disconnected', () => { /* the introducer went away; the direct link still works */ });
   return {
     info: theirInfo,
-    send: (msg) => { if (!closed) conn.send(msg); },
+    send(msg) {
+      if (closed) return;
+      const text = JSON.stringify(msg);
+      if (text.length <= PART_SIZE) { conn.send(msg); return; }
+      const id = randomToken(8);
+      const n = Math.ceil(text.length / PART_SIZE);
+      for (let i = 0; i < n; i++) {
+        conn.send({ type: 'part', of: msg.type, id, i, n, data: text.slice(i * PART_SIZE, (i + 1) * PART_SIZE) });
+      }
+    },
     onMessage: (fn) => listeners.message.add(fn),
+    onProgress: (fn) => listeners.progress.add(fn),
     onClose: (fn) => listeners.close.add(fn),
     close: () => { if (!closed) { conn.close(); finish(); } },
   };

@@ -1,6 +1,6 @@
 import {
   loadNotes, saveNotes, STORAGE_KEY, NOTEBOOKS_KEY, loadNotebooks, saveNotebooks,
-  backupJSON, parseBackup, mergeNotes,
+  backupJSON, parseBackup, mergeNotes, mergeStates, syncState, saveSynced,
 } from './store.js';
 import { listEnter, listIndent, toggleList } from './lists.js';
 import {
@@ -1826,22 +1826,64 @@ async function startSyncJoin(code) {
   }
 }
 
+// Sync: both devices send everything they have, each merges the other's into its own
+// (store.js mergeStates; both reach the same result), then each tells the other it's done.
+const LAST_SYNC_KEY = 'notes.lastSync';
+const lastSyncAt = () => Number(getSetting(LAST_SYNC_KEY)) || 0;
+
+function sendSyncState(session) {
+  if (session.sent) return;
+  session.sent = true;
+  if (saveTimer) flushSave();
+  showSyncProgress('Sending notes…', 20);
+  session.channel.send({ type: 'state', state: syncState(notes, notebooks, lastSyncAt()) });
+}
+
+function applySyncState(remote) {
+  if (saveTimer) flushSave();
+  const result = mergeStates(syncState(notes, notebooks, lastSyncAt()), remote);
+  notes.splice(0, notes.length, ...result.notes);
+  notebooks = result.notebooks;
+  saveFailed = !saveSynced(notes, notebooks, result.tombstones);
+  setSetting(LAST_SYNC_KEY, String(Date.now()));
+  if (view !== 'all' && view !== 'trash' && !notebookName(view)) { view = 'all'; setSetting('notes.view', view); }
+  if (!activeNote() || !inView(activeNote())) activeId = phoneLayout.matches ? null : visibleNotes()[0]?.id ?? null;
+  renderList();
+  renderEditor();
+  return result.stats;
+}
+
+function finishSyncIfDone(session) {
+  if (!session.stats || !session.peerApplied) return;
+  showSyncDone(session);
+  if (session.role === 'join') endSyncSession(); // the computer sees the link close after "done"
+}
+
 function listenToChannel(session) {
   const { channel } = session;
   channel.onMessage((msg) => {
     if (syncSession !== session) return;
     if (msg.type === 'start' && session.role === 'host') {
-      showSyncProgress('Checking notes…', 50);
-      // Sprint 1: the two devices only meet. Copying notes across comes next.
-      channel.send({ type: 'done' });
-      showSyncDone(session);
-    } else if (msg.type === 'done' && session.role === 'join') {
-      showSyncDone(session);
-      endSyncSession();
+      sendSyncState(session);
+    } else if (msg.type === 'state' && !session.stats) {
+      showSyncProgress('Merging…', 85);
+      sendSyncState(session); // in case the start message was missed
+      session.stats = applySyncState(msg.state);
+      channel.send({ type: 'applied' });
+      finishSyncIfDone(session);
+    } else if (msg.type === 'applied') {
+      session.peerApplied = true;
+      finishSyncIfDone(session);
     }
   });
+  channel.onProgress((type, got, total) => {
+    if (syncSession === session && type === 'state') showSyncProgress('Receiving notes…', 20 + Math.round((60 * got) / total));
+  });
   channel.onClose(() => {
-    if (syncSession === session && syncEl.dataset.step !== 'done') showSyncFailure({ reason: 'refused' });
+    if (syncSession !== session || syncEl.dataset.step === 'done') return;
+    // Closed after we merged but before hearing back: our side is synced all the same.
+    if (session.stats) showSyncDone(session);
+    else showSyncFailure({ reason: 'refused' });
   });
 }
 
@@ -1853,21 +1895,40 @@ function showSyncProgress(text, percent) {
 }
 
 function showSyncDone(session) {
-  const other = session.channel.info;
-  const otherName = other.device ?? otherKind(deviceKind());
-  const same = otherName === deviceKind(); // two computers, or two phones
-  $('#sync-done-title').textContent = 'Connected';
-  $('#sync-done-text').textContent = `This ${deviceKind()} and ${same ? 'the other' : 'your'} ${otherName} can reach each other directly. Copying notes between them is the next step we build.`;
+  const { stats } = session;
+  const otherName = session.channel.info.device ?? otherKind(deviceKind());
+  const yours = otherName === deviceKind() ? `the other ${otherName}` : `your ${otherName}`; // two computers, or two phones
+  const nothing = !stats.added && !stats.updated && !stats.removed && !stats.sent;
+  $('#sync-done-title').textContent = nothing ? 'Already in sync' : 'Synced';
+  $('#sync-done-text').textContent = nothing
+    ? `This ${deviceKind()} and ${yours} already had the same notes.`
+    : `This ${deviceKind()} and ${yours} now have the same notes.`;
   const row = (label, value) => {
     const li = el('li');
-    li.append(el('span', '', label), el('strong', '', value));
+    li.append(el('span', '', label), el('strong', '', countLabel(value)));
     return li;
   };
-  $('#sync-stats').replaceChildren(
-    row(`This ${deviceKind()}`, countLabel(syncInfo().notes)),
-    row(same ? `Other ${otherName}` : capital(otherName), countLabel(other.notes ?? 0)),
-  );
-  $('#sync-note').hidden = true;
+  const rows = [
+    [`New from ${yours}`, stats.added],
+    [`Updated from ${yours}`, stats.updated],
+    [`Sent to ${yours}`, stats.sent],
+    ['Moved to Trash or deleted', stats.removed],
+  ].filter(([, n]) => n).map(([label, n]) => row(label, n));
+  $('#sync-stats').replaceChildren(...rows);
+  $('#sync-stats').hidden = !rows.length;
+
+  // Notes edited on both devices since they last synced: say which copy was kept.
+  const noteEl = $('#sync-note');
+  const { conflicts } = stats;
+  noteEl.hidden = !conflicts.length;
+  if (conflicts.length === 1) {
+    const [c] = conflicts;
+    const n = notes.find((x) => x.id === c.id);
+    const time = new Date(c.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    noteEl.textContent = `“${n ? displayTitle(n) : c.title || 'A note'}” was changed on both. The newer copy (from ${c.keptMine ? `this ${deviceKind()}` : yours}, ${time}) was kept.`;
+  } else if (conflicts.length) {
+    noteEl.textContent = `${conflicts.length} notes were changed on both. The newer copy of each was kept.`;
+  }
   setSyncStep('done');
 }
 
@@ -1879,7 +1940,7 @@ $('#sync-start').addEventListener('click', () => {
   const session = syncSession;
   if (!session?.channel) return;
   session.channel.send({ type: 'start' });
-  showSyncProgress('Checking notes…', 50);
+  sendSyncState(session);
 });
 syncEl.querySelectorAll('.sync-cancel').forEach((b) => b.addEventListener('click', closeSync));
 syncEl.querySelectorAll('.sync-backup').forEach((b) => b.addEventListener('click', () => { closeSync(); exportNotes(); }));

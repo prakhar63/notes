@@ -1518,3 +1518,4 @@ kbd {
   .sync-close { top: calc(12px + env(safe-area-inset-top)); }
 }
 .sync-tips[hidden], .sync-actions .dialog-btn[hidden] { display: none; }
+.sync-stats[hidden] { display: none; }
