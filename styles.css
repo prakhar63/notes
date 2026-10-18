@@ -1722,3 +1722,127 @@ kbd {
   .drawer-item, .drawer-link { min-height: 44px; }
   .drawer-note { min-height: 40px; font-size: 15px; }
 }
+
+/* ---------- ← back out of a notebook ---------- */
+
+.back-btn { background: var(--highlight); color: var(--brand-text); }
+.back-btn:hover { background: var(--highlight); color: var(--brand-text); filter: brightness(0.97); }
+
+/* ---------- Select several notes ---------- */
+
+.select-head { display: flex; align-items: center; gap: 6px; min-height: 40px; }
+.select-head[hidden], .select-hint[hidden], .select-bar[hidden], .select-pop[hidden],
+.select-link[hidden], .select-act[hidden], .sidebar-head[hidden] { display: none; }
+.select-cancel { background: var(--surface-2); color: var(--ink); }
+.select-hint { margin: -4px 0 0; padding: 0 4px; font-size: 13px; color: var(--muted); }
+.select-link {
+  padding: 6px 2px;
+  border: 0;
+  background: none;
+  color: var(--brand-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.select-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.select-head .select-link { font-size: 14px; padding: 8px 4px; }
+.list-meta #select-start { margin-left: auto; margin-right: 14px; }
+
+.select-box {
+  order: -1;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--rule-strong);
+  color: transparent;
+}
+.note-item[aria-pressed="true"] .select-box { background: var(--brand); color: var(--brand-ink); box-shadow: none; }
+.note-item[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--brand-text); }
+/* While selecting, the open note looks like any other note: deep blue would read as "selected". */
+body[data-select] .note-item[aria-current="true"] {
+  background: color-mix(in srgb, var(--c) var(--tile-mix), var(--surface));
+  color: var(--tile-ink);
+  box-shadow: inset 0 0 0 1px var(--tile-edge);
+}
+body[data-select] .note-item[data-color="paper"][aria-current="true"] { background: var(--surface); }
+body[data-select] .note-item[aria-current="true"][aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--brand-text); }
+body[data-select] .note-item[aria-current="true"] .note-preview,
+body[data-select] .note-item[aria-current="true"] .note-date { color: var(--tile-muted); }
+
+.select-bar {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  animation: pop-in 0.16s ease-out;
+}
+.select-act {
+  flex: 1;
+  min-width: 0;
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.select-act:hover:not(:disabled), .select-act[aria-expanded="true"] { background: var(--surface-2); color: var(--brand-text); }
+.select-act.danger { color: #b3261e; }
+:root[data-effective="dark"] .select-act.danger { color: #f2a19a; }
+.select-act:disabled { opacity: 0.4; cursor: default; }
+.select-act-label { white-space: nowrap; }
+
+.select-pop {
+  position: fixed;
+  z-index: 35;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  animation: pop-in 0.14s ease-out;
+}
+.select-pop-title {
+  margin: 0;
+  padding: 6px 10px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.select-swatches { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 10px 10px; }
+
+body[data-select] .fab { display: none; }
+
+@media (max-width: 719px) {
+  .select-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    margin: 0;
+    padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
+    border-radius: 0;
+    box-shadow: 0 -8px 24px rgb(30 42 49 / 0.1);
+  }
+  .select-act { min-height: 58px; font-size: 12px; }
+  .select-head .view-title { font-size: 24px; }
+  .select-box { width: 24px; height: 24px; }
+}
