@@ -8,7 +8,7 @@ const COLORS = ['paper', 'cornflower', 'chartreuse', 'peach', 'mint', 'pink'];
 function normalize(raw) {
   if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string') return null;
   const now = Date.now();
-  return {
+  const note = {
     ...raw,
     id: raw.id,
     title: typeof raw.title === 'string' ? raw.title : '',
@@ -17,9 +17,24 @@ function normalize(raw) {
     createdAt: Number.isFinite(raw.createdAt) ? raw.createdAt : now,
     updatedAt: Number.isFinite(raw.updatedAt) ? raw.updatedAt : now,
   };
+  // Checklist notes keep their items as [{ id, text, done }].
+  if (raw.kind === 'checklist') {
+    note.items = (Array.isArray(raw.items) ? raw.items : [])
+      .filter((it) => it && typeof it === 'object')
+      .map((it, i) => ({
+        id: typeof it.id === 'string' ? it.id : `${raw.id}-${i}`,
+        text: typeof it.text === 'string' ? it.text : '',
+        done: it.done === true,
+      }));
+  } else {
+    delete note.kind;
+    delete note.items;
+  }
+  return note;
 }
 
-const isBlank = (note) => !note.title.trim() && !note.body.trim();
+const isBlank = (note) =>
+  !note.title.trim() && !note.body.trim() && !(note.items ?? []).some((it) => it.text.trim());
 
 /**
  * Returns the saved notes, or null on first run (nothing saved yet).

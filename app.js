@@ -72,9 +72,17 @@ const sortNotes = (list) => [...list].sort(SORTS[sortBy]);
 const TAG_RE = /(^|\s)#([\p{L}\p{N}_-]+)/gu;
 let activeTag = null; // lowercase tag the list is filtered by, or null
 
+const isChecklist = (note) => note.kind === 'checklist';
+
+// Everything written in a note, for search and tags: title, then body or checklist items.
+function noteText(note) {
+  const content = isChecklist(note) ? note.items.map((it) => it.text).join('\n') : note.body;
+  return `${note.title}\n${content}`;
+}
+
 function tagsOf(note) {
   const tags = new Set();
-  for (const m of `${note.title}\n${note.body}`.matchAll(TAG_RE)) {
+  for (const m of noteText(note).matchAll(TAG_RE)) {
     const tag = m[2].replace(/[-_]+$/, '').toLowerCase();
     if (/\p{L}/u.test(tag)) tags.add(tag);
   }
@@ -88,7 +96,7 @@ function visibleNotes() {
   if (activeTag) matches = matches.filter((n) => tagsOf(n).includes(activeTag));
   if (words.length) {
     matches = matches.filter((n) => {
-      const text = `${n.title}\n${n.body}`.toLowerCase();
+      const text = noteText(n).toLowerCase();
       return words.every((w) => text.includes(w));
     });
   }
@@ -96,10 +104,18 @@ function visibleNotes() {
 }
 
 function displayTitle(note) {
-  return note.title.trim() || note.body.trim().split('\n')[0] || 'Untitled';
+  if (note.title.trim()) return note.title.trim();
+  if (isChecklist(note)) return note.items.find((it) => it.text.trim())?.text.trim() || 'Untitled list';
+  return note.body.trim().split('\n')[0] || 'Untitled';
 }
 
 function preview(note) {
+  if (isChecklist(note)) {
+    // "☐ Oats  ☑ Figs  ☐ Coffee" (skipping the item already used as the title)
+    let items = note.items.filter((it) => it.text.trim());
+    if (!note.title.trim()) items = items.slice(1);
+    return items.map((it) => `${it.done ? '☑' : '☐'} ${it.text.trim()}`).join('  ');
+  }
   const text = note.title.trim() ? note.body : note.body.trim().split('\n').slice(1).join(' ');
   return text.replace(/\s+/g, ' ').trim();
 }
@@ -220,7 +236,8 @@ function renderList() {
 }
 
 const activeNote = () => notes.find((n) => n.id === activeId);
-const isBlank = (note) => !note.title.trim() && !note.body.trim();
+const isBlank = (note) =>
+  !note.title.trim() && !note.body.trim() && !(note.items ?? []).some((it) => it.text.trim());
 
 // ---------- Pins ----------
 
@@ -272,6 +289,10 @@ function renderMeta(note) {
   if (saveFailed) metaEl.textContent = 'Not saved — browser storage is full or blocked';
   else if (saveTimer) metaEl.textContent = 'Saving…';
   else metaEl.textContent = `Saved · edited ${relativeTime(note.updatedAt)}`;
+  if (isChecklist(note) && !saveFailed) {
+    const items = note.items.filter((it) => it.text.trim());
+    metaEl.textContent = `${items.filter((it) => it.done).length} of ${items.length} done · ${metaEl.textContent}`;
+  }
 }
 
 // "Tags in this note:" under the text; each chip filters the list by that tag.
@@ -296,6 +317,9 @@ function renderEditor() {
   editorEl.dataset.color = note.color;
   titleEl.value = note.title;
   bodyEl.value = note.body;
+  editorEl.dataset.kind = isChecklist(note) ? 'checklist' : 'text';
+  checklistEl.hidden = !isChecklist(note);
+  if (isChecklist(note)) renderChecklist(note);
   renderMeta(note);
   renderNoteTags(note);
   hideTagHint();
@@ -347,14 +371,20 @@ function openNote(id) {
   renderEditor();
 }
 
-function newNote() {
+// kind: 'text' or 'checklist'
+function newNote(kind = 'text') {
   const t = Date.now();
   const note = { id: crypto.randomUUID(), title: '', body: '', color: 'paper', createdAt: t, updatedAt: t };
+  if (kind === 'checklist') {
+    note.kind = 'checklist';
+    note.items = [newItem()];
+  }
   notes.push(note);
   searchEl.value = ''; // so the new note shows up in the list
   activeTag = null;
   openNote(note.id);
-  bodyEl.focus();
+  if (kind === 'checklist') focusItem(0, 0);
+  else bodyEl.focus();
 }
 
 function showList() {
@@ -364,6 +394,142 @@ function showList() {
   renderList();
   renderEditor();
 }
+
+// ---------- Checklist notes ----------
+
+const checklistEl = $('#checklist');
+const newItem = (text = '') => ({ id: crypto.randomUUID(), text, done: false });
+
+// One row per item, plus an "add" row at the end; ticked items stay where they are.
+function renderChecklist(note) {
+  const rows = note.items.map((item, i) => {
+    const li = el('li', 'check-item');
+    li.dataset.index = i;
+    li.classList.toggle('done', item.done);
+
+    const box = el('input', 'check-box');
+    box.type = 'checkbox';
+    box.checked = item.done;
+    box.setAttribute('aria-label', item.text.trim() ? `Done: ${item.text.trim()}` : 'Done');
+
+    const text = el('input', 'check-text');
+    text.type = 'text';
+    text.value = item.text;
+    text.placeholder = 'List item';
+    text.setAttribute('aria-label', `Item ${i + 1}`);
+    text.enterKeyHint = 'next';
+
+    const remove = el('button', 'check-remove');
+    remove.type = 'button';
+    remove.setAttribute('aria-label', 'Remove item');
+    remove.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+
+    li.append(box, text, remove);
+    return li;
+  });
+
+  const add = el('li', 'check-item check-add');
+  add.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+  const addInput = el('input', 'check-text check-new');
+  addInput.type = 'text';
+  addInput.placeholder = 'List item';
+  addInput.setAttribute('aria-label', 'Add an item');
+  add.append(addInput);
+
+  checklistEl.replaceChildren(...rows, add);
+}
+
+function focusItem(index, caret = null) {
+  const inputs = checklistEl.querySelectorAll('.check-text');
+  const input = inputs[Math.max(0, Math.min(index, inputs.length - 1))];
+  if (!input) return;
+  input.focus();
+  const pos = caret === null ? input.value.length : caret;
+  input.setSelectionRange(pos, pos);
+}
+
+// Every checklist change: save, refresh the status line, tags and list.
+function checklistChanged(note) {
+  note.updatedAt = Date.now();
+  scheduleSave();
+  renderMeta(note);
+  renderNoteTags(note);
+  renderList();
+}
+
+const rowIndex = (target) => Number(target.closest('.check-item')?.dataset.index);
+
+checklistEl.addEventListener('change', (e) => {
+  if (!e.target.classList.contains('check-box')) return;
+  const note = activeNote();
+  const item = note.items[rowIndex(e.target)];
+  item.done = e.target.checked;
+  e.target.closest('.check-item').classList.toggle('done', item.done);
+  checklistChanged(note);
+});
+
+checklistEl.addEventListener('input', (e) => {
+  if (!e.target.classList.contains('check-text')) return;
+  const note = activeNote();
+  if (e.target.classList.contains('check-new')) {
+    // Typing in the add row turns it into a real item and keeps you typing in it.
+    const caret = e.target.selectionStart;
+    note.items.push(newItem(e.target.value));
+    renderChecklist(note);
+    focusItem(note.items.length - 1, caret);
+  } else {
+    note.items[rowIndex(e.target)].text = e.target.value;
+  }
+  checklistChanged(note);
+});
+
+checklistEl.addEventListener('keydown', (e) => {
+  if (!e.target.classList.contains('check-text') || e.isComposing) return;
+  const note = activeNote();
+  const input = e.target;
+  const isAdd = input.classList.contains('check-new');
+  const i = isAdd ? note.items.length : rowIndex(input);
+  const atStart = input.selectionStart === 0 && input.selectionEnd === 0;
+
+  if (e.key === 'Enter') {
+    // Enter: a new item below (taking any text after the cursor with it).
+    e.preventDefault();
+    if (isAdd) return;
+    const before = input.value.slice(0, input.selectionStart);
+    const after = input.value.slice(input.selectionEnd);
+    note.items[i].text = before;
+    note.items.splice(i + 1, 0, newItem(after));
+    renderChecklist(note);
+    focusItem(i + 1, 0);
+    checklistChanged(note);
+  } else if (e.key === 'Backspace' && atStart && !isAdd && !input.value) {
+    // Backspace in an empty item removes it.
+    e.preventDefault();
+    note.items.splice(i, 1);
+    if (!note.items.length) note.items.push(newItem());
+    renderChecklist(note);
+    focusItem(Math.max(0, i - 1));
+    checklistChanged(note);
+  } else if (e.key === 'ArrowUp' && i > 0) {
+    e.preventDefault();
+    focusItem(i - 1);
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    focusItem(i + 1);
+  }
+});
+
+checklistEl.addEventListener('click', (e) => {
+  const remove = e.target.closest('.check-remove');
+  if (!remove) return;
+  const note = activeNote();
+  const i = rowIndex(remove);
+  note.items.splice(i, 1);
+  if (!note.items.length) note.items.push(newItem());
+  renderChecklist(note);
+  focusItem(Math.min(i, note.items.length - 1));
+  checklistChanged(note);
+});
 
 function updateActive(field, value) {
   const note = activeNote();
@@ -503,8 +669,73 @@ listEl.addEventListener('click', (e) => {
   if (item) openNote(item.dataset.id);
 });
 
-$('#new-note').addEventListener('click', newNote);
-$('#new-note-fab').addEventListener('click', newNote);
+// ---------- New note menu: Text or Checklist ----------
+
+const newMenuEl = $('#new-menu');
+const scrimEl = $('#menu-scrim');
+let menuTrigger = null;
+
+function openNewMenu(trigger) {
+  menuTrigger = trigger;
+  trigger.setAttribute('aria-expanded', 'true');
+  newMenuEl.hidden = false;
+  const onPhone = phoneLayout.matches;
+  newMenuEl.classList.toggle('as-fab', onPhone);
+  scrimEl.hidden = !onPhone;
+  document.body.dataset.menu = 'open';
+  if (!onPhone) {
+    // Desktop: drop down under the button (or beside the collapsed rail's button).
+    const r = trigger.getBoundingClientRect();
+    const beside = trigger.id === 'rail-new';
+    newMenuEl.style.top = `${beside ? r.top : r.bottom + 8}px`;
+    newMenuEl.style.left = beside ? `${r.right + 8}px` : `${Math.max(8, r.right - newMenuEl.offsetWidth)}px`;
+  } else {
+    newMenuEl.style.top = newMenuEl.style.left = '';
+  }
+  newMenuEl.querySelector('.new-menu-item').focus();
+}
+
+function closeNewMenu({ restoreFocus = false } = {}) {
+  if (newMenuEl.hidden) return;
+  newMenuEl.hidden = true;
+  scrimEl.hidden = true;
+  delete document.body.dataset.menu;
+  menuTrigger?.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) menuTrigger?.focus();
+  menuTrigger = null;
+}
+
+for (const id of ['#new-note', '#new-note-fab', '#rail-new']) {
+  const trigger = $(id);
+  trigger.setAttribute('aria-haspopup', 'menu');
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.addEventListener('click', () => {
+    if (menuTrigger === trigger) closeNewMenu();
+    else { closeNewMenu(); openNewMenu(trigger); }
+  });
+}
+
+newMenuEl.addEventListener('click', (e) => {
+  const item = e.target.closest('.new-menu-item');
+  if (!item) return;
+  closeNewMenu();
+  newNote(item.dataset.kind);
+});
+
+// Up/Down move between the two choices.
+newMenuEl.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  e.preventDefault();
+  const items = [...newMenuEl.querySelectorAll('.new-menu-item')];
+  const i = items.indexOf(document.activeElement);
+  items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+});
+
+// Click or tap anywhere else closes it.
+document.addEventListener('pointerdown', (e) => {
+  if (newMenuEl.hidden || newMenuEl.contains(e.target) || menuTrigger?.contains(e.target)) return;
+  closeNewMenu();
+});
 
 // ---------- Collapsible list (desktop) ----------
 
@@ -524,7 +755,6 @@ try { setListCollapsed(localStorage.getItem(LIST_KEY) === '1'); } catch { setLis
 
 collapseBtn.addEventListener('click', () => setListCollapsed(true, { moveFocus: true }));
 expandBtn.addEventListener('click', () => setListCollapsed(false, { moveFocus: true }));
-$('#rail-new').addEventListener('click', newNote);
 $('#rail-search').addEventListener('click', () => {
   setListCollapsed(false);
   searchEl.focus();
@@ -688,7 +918,8 @@ for (const [id, kind] of [['#list-numbered', 'numbered'], ['#list-bullet', 'bull
 titleEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) { // let IME users confirm a word with Enter
     e.preventDefault();
-    bodyEl.focus();
+    if (isChecklist(activeNote())) focusItem(0);
+    else bodyEl.focus();
   }
 });
 
@@ -708,6 +939,8 @@ document.addEventListener('keydown', (e) => {
     setListCollapsed(false);
     searchEl.focus();
     searchEl.select();
+  } else if (e.key === 'Escape' && !newMenuEl.hidden) {
+    closeNewMenu({ restoreFocus: true });
   } else if (e.key === 'Escape' && document.body.dataset.view === 'editor' && phoneLayout.matches) {
     leaveEditorView();
   }
